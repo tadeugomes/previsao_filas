@@ -1,0 +1,10 @@
+requests
+pandas
+beautifulsoup4
+lxml
+html5lib
+urllib3
+google-cloud-bigquery
+lightgbm
+scikit-learn
+numpy
