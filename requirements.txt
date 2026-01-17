@@ -8,3 +8,4 @@ google-cloud-bigquery
 lightgbm
 scikit-learn
 numpy
+xgboost

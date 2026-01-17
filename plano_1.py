@@ -4,10 +4,20 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 import requests
+import unicodedata
+import re
 from google.cloud import bigquery
 import lightgbm as lgb
+import xgboost as xgb
 from sklearn.model_selection import TimeSeriesSplit
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import (
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score,
+    confusion_matrix,
+    classification_report,
+    roc_auc_score,
+)
 
 warnings.filterwarnings('ignore')
 
@@ -29,6 +39,16 @@ def extrair_dados_antaq_carga(project_id='antaqdados'):
                 ORDER BY SAFE_CAST(REPLACE(REPLACE(vlpesocargabruta, '.', ''), ',', '.') AS FLOAT64) DESC
                 LIMIT 1
             )[OFFSET(0)] AS natureza_carga,
+            ARRAY_AGG(
+                cdmercadoria
+                ORDER BY SAFE_CAST(REPLACE(REPLACE(vlpesocargabruta, '.', ''), ',', '.') AS FLOAT64) DESC
+                LIMIT 1
+            )[OFFSET(0)] AS cdmercadoria,
+            ARRAY_AGG(
+                stsh4
+                ORDER BY SAFE_CAST(REPLACE(REPLACE(vlpesocargabruta, '.', ''), ',', '.') AS FLOAT64) DESC
+                LIMIT 1
+            )[OFFSET(0)] AS stsh4,
             SUM(SAFE_CAST(REPLACE(REPLACE(vlpesocargabruta, '.', ''), ',', '.') AS FLOAT64)) AS movimentacao_total_toneladas
         FROM
             `antaqdados.br_antaq_estatistico_aquaviario.carga`
@@ -65,6 +85,8 @@ def extrair_dados_antaq_carga(project_id='antaqdados'):
         a.sguf AS uf,
         c.tipo_carga,
         c.natureza_carga,
+        c.cdmercadoria,
+        c.stsh4,
         c.movimentacao_total_toneladas
     FROM
         `antaqdados.br_antaq_estatistico_aquaviario.atracacao` a
@@ -100,9 +122,13 @@ def extrair_dados_antaq_carga(project_id='antaqdados'):
     return df
 
 
-def extrair_dados_climaticos(project_id='antaqdados'):
+def extrair_dados_climaticos(project_id='antaqdados', station_ids=None):
     """Extrai dados meteorologicos do INMET via Base dos Dados."""
     client = bigquery.Client(project=project_id)
+    station_filter = ""
+    if station_ids:
+        station_list = ",".join([f"'{sid}'" for sid in station_ids])
+        station_filter = f"AND id_estacao IN ({station_list})"
     query = """
     SELECT
         CAST(ano AS INT64) AS ano,
@@ -120,10 +146,10 @@ def extrair_dados_climaticos(project_id='antaqdados'):
         `basedosdados.br_inmet_bdmep.microdados`
     WHERE
         CAST(ano AS INT64) >= 2020
-        AND id_estacao IN ('A202', 'A652', 'A807')
+        {station_filter}
     GROUP BY
         ano, mes, data, id_estacao
-    """
+    """.format(station_filter=station_filter)
     print("[2/4] Extraindo dados climaticos (INMET)...")
     df_clima = client.query(query).to_dataframe()
     print(f"    OK. {len(df_clima):,} registros")
@@ -198,12 +224,6 @@ def extrair_precos_commodities():
 def integrar_clima_com_atracacao(df_antaq, df_clima):
     """Join entre atracacao e clima por data + estacao."""
     print("Integrando clima com atracacoes...")
-    porto_estacao_map = {
-        'ITAQUI': 'A202',
-        'SANTOS': 'A652',
-        'PARANAGUA': 'A807'
-    }
-    df_antaq['id_estacao'] = df_antaq['nome_porto'].str.upper().map(porto_estacao_map)
     df_antaq['data_chegada_date'] = pd.to_datetime(
         df_antaq['data_chegada'], dayfirst=True, errors='coerce'
     ).dt.date
@@ -217,6 +237,59 @@ def integrar_clima_com_atracacao(df_antaq, df_clima):
     )
     print(f"    OK. {len(df):,} registros")
     return df
+
+
+def filtrar_granel_solido(df):
+    """Filtra apenas cargas de granel solido."""
+    df = df.copy()
+    mask = df['natureza_carga'].astype(str).str.contains('granel', case=False, na=False)
+    return df[mask]
+
+
+def normalizar_texto(valor):
+    """Normaliza texto para comparacao simples."""
+    if pd.isna(valor):
+        return ""
+    texto = str(valor).upper()
+    texto = ''.join(ch for ch in unicodedata.normalize('NFKD', texto) if not unicodedata.combining(ch))
+    return re.sub(r'[^A-Z0-9]', '', texto)
+
+
+def mapear_estacoes_por_municipio(df_antaq, project_id='antaqdados'):
+    """Mapeia municipio para id_estacao usando tabela de estacoes do INMET."""
+    client = bigquery.Client(project=project_id)
+    query = """
+    SELECT id_estacao, estacao
+    FROM `basedosdados.br_inmet_bdmep.estacao`
+    """
+    df_est = client.query(query).to_dataframe()
+    df_est['estacao_norm'] = df_est['estacao'].apply(normalizar_texto)
+    estacoes = list(zip(df_est['estacao_norm'], df_est['id_estacao']))
+    municipios = df_antaq['municipio'].dropna().unique()
+    mapping = {}
+    for municipio in municipios:
+        muni_norm = normalizar_texto(municipio)
+        match = None
+        for estacao_norm, est_id in estacoes:
+            if muni_norm and muni_norm in estacao_norm:
+                match = est_id
+                break
+        mapping[municipio] = match
+    return mapping
+
+
+def aplicar_corte_percentil(df, col, group_col, p=0.95):
+    """Corta valores acima do percentil por grupo."""
+    df = df.copy()
+    limites = df.groupby(group_col)[col].quantile(p).to_dict()
+    df['limite_percentil'] = df[group_col].map(limites)
+    df = df[df[col] <= df['limite_percentil']]
+    return df.drop(columns=['limite_percentil'])
+
+
+def classificar_espera(series):
+    """Classifica espera em tercis (qcut) para balancear as classes."""
+    return pd.qcut(series, q=3, labels=[0, 1, 2]).astype(int)
 
 
 def integrar_producao_agricola(df, df_pam):
@@ -280,10 +353,12 @@ def calcular_target(df):
     """Calcula tempo de espera em horas entre chegada e atracacao."""
     df = df.copy()
     df['data_chegada_dt'] = pd.to_datetime(df['data_chegada'], dayfirst=True, errors='coerce')
-    df['data_atracacao_dt'] = pd.to_datetime(df['data_atracacao'], dayfirst=True, errors='coerce')
+    df['data_atracacao_dt'] = pd.to_datetime(df['data_atracacao'], dayfirst=False, errors='coerce')
     delta = df['data_atracacao_dt'] - df['data_chegada_dt']
     df['tempo_espera_horas'] = delta.dt.total_seconds() / 3600.0
-    df = df[df['tempo_espera_horas'].notna() & (df['tempo_espera_horas'] >= 0)]
+    df = df[df['tempo_espera_horas'].notna()]
+    df = df[df['tempo_espera_horas'] >= 6]
+    df = aplicar_corte_percentil(df, col='tempo_espera_horas', group_col='natureza_carga', p=0.95)
     return df
 
 
@@ -351,13 +426,34 @@ def calcular_densidade_fila(df):
     print("Calculando densidade de fila...")
     df = df.sort_values(['nome_terminal', 'data_chegada_dt']).reset_index(drop=True)
     counts = (
-        df.groupby('nome_terminal', sort=False)
-        .apply(lambda x: x.rolling('7D', on='data_chegada_dt')['idatracacao'].count())
+        df.set_index('data_chegada_dt')
+        .groupby('nome_terminal', sort=False)['idatracacao']
+        .rolling('7D')
+        .count()
         .reset_index(level=0, drop=True)
-        .sort_index()
     )
     df['navios_na_fila_7d'] = counts.to_numpy()
-    df['navios_na_fila_7d'] = df['navios_na_fila_7d'].fillna(0)
+    return df
+
+
+def calcular_fila_no_momento(df):
+    """Conta quantos navios estavam esperando no momento da chegada."""
+    print("Calculando fila no momento da chegada...")
+    df = df.sort_values(['nome_terminal', 'data_chegada_dt']).reset_index(drop=True)
+    fila = np.zeros(len(df), dtype=float)
+    for _, idx in df.groupby('nome_terminal', sort=False).groups.items():
+        sub = df.loc[idx]
+        chegadas = sub['data_chegada_dt'].to_numpy()
+        atracacoes = sub['data_atracacao_dt'].to_numpy()
+        order = np.argsort(chegadas)
+        chegadas_sorted = chegadas[order]
+        atracacoes_sorted = np.sort(atracacoes)
+        for j, pos in enumerate(order):
+            t = chegadas_sorted[j]
+            arrivals_before = j
+            departures_before = np.searchsorted(atracacoes_sorted, t, side='right')
+            fila[idx[pos]] = max(arrivals_before - departures_before, 0)
+    df['navios_no_fundeio_na_chegada'] = fila
     return df
 
 
@@ -377,7 +473,11 @@ def preparar_dados():
     print("PIPELINE DE INTEGRACAO E PREPARACAO DE DADOS")
     print("=" * 70)
     df_antaq = extrair_dados_antaq_carga()
-    df_clima = extrair_dados_climaticos()
+    df_antaq = filtrar_granel_solido(df_antaq)
+    station_map = mapear_estacoes_por_municipio(df_antaq)
+    df_antaq['id_estacao'] = df_antaq['municipio'].map(station_map)
+    station_ids = [sid for sid in df_antaq['id_estacao'].dropna().unique()]
+    df_clima = extrair_dados_climaticos(station_ids=station_ids)
     df_pam = extrair_dados_producao_agricola()
     df_precos = extrair_precos_commodities()
     df = integrar_clima_com_atracacao(df_antaq, df_clima)
@@ -390,12 +490,15 @@ def preparar_dados():
     df = criar_features_temporais(df)
     df = criar_features_climaticas_avancadas(df)
     df = criar_features_commodities(df)
+    df = calcular_fila_no_momento(df)
     df = calcular_densidade_fila(df)
     df = criar_lag_features(df)
     features = [
         'nome_porto', 'nome_terminal', 'tipo_navegacao', 'tipo_carga',
+        'natureza_carga', 'cdmercadoria', 'stsh4',
         'movimentacao_total_toneladas', 'mes', 'dia_semana',
-        'navios_na_fila_7d', 'tempo_espera_ma5',
+        'navios_no_fundeio_na_chegada', 'navios_na_fila_7d', 'tempo_espera_ma5',
+        'dia_do_ano',
         'temp_media_dia', 'precipitacao_dia', 'vento_rajada_max_dia',
         'umidade_media_dia', 'amplitude_termica',
         'restricao_vento', 'restricao_chuva',
@@ -423,6 +526,36 @@ def preparar_dados():
     return df_final, features, target
 
 
+def gerar_splits_temporais(df, n_splits=3, gap_days=7):
+    """Gera splits temporais com gap para evitar vazamento."""
+    df = df.sort_values('data_chegada_dt').reset_index(drop=True)
+    dates = pd.to_datetime(df['data_chegada_dt']).dt.normalize()
+    unique_dates = np.sort(dates.dropna().unique())
+    if len(unique_dates) < n_splits + 1:
+        raise ValueError("Poucas datas unicas para criar splits temporais.")
+
+    fold_sizes = np.array_split(unique_dates, n_splits + 1)
+    splits = []
+    gap = np.timedelta64(gap_days, 'D')
+
+    for i in range(1, n_splits + 1):
+        val_dates = fold_sizes[i]
+        if len(val_dates) == 0:
+            continue
+        val_start = val_dates[0]
+        val_end = val_dates[-1]
+        train_end = val_start - gap
+        train_idx = df.index[dates <= train_end].to_numpy()
+        val_idx = df.index[(dates >= val_start) & (dates <= val_end)].to_numpy()
+        if len(train_idx) == 0 or len(val_idx) == 0:
+            continue
+        splits.append((train_idx, val_idx))
+
+    if len(splits) == 0:
+        raise ValueError("Nao foi possivel criar splits temporais validos.")
+    return splits
+
+
 def treinar_modelo(df, features, target):
     """Treina modelo LightGBM com validacao temporal."""
     print("=" * 70)
@@ -430,15 +563,18 @@ def treinar_modelo(df, features, target):
     print("=" * 70)
     X = df[features].copy()
     y = df[target].copy()
-    cat_features = ['nome_porto', 'nome_terminal', 'tipo_navegacao', 'tipo_carga']
+    cat_features = [
+        'nome_porto', 'nome_terminal', 'tipo_navegacao',
+        'tipo_carga', 'natureza_carga', 'cdmercadoria', 'stsh4'
+    ]
     for col in cat_features:
         X[col] = X[col].astype('category')
-    tscv = TimeSeriesSplit(n_splits=3)
+    splits = gerar_splits_temporais(df, n_splits=3, gap_days=7)
     mae_scores = []
     rmse_scores = []
     r2_scores = []
     print("Executando Time Series Cross-Validation (3 folds)...")
-    for fold, (train_idx, val_idx) in enumerate(tscv.split(X)):
+    for fold, (train_idx, val_idx) in enumerate(splits):
         X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
         y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
         model = lgb.LGBMRegressor(
@@ -451,19 +587,23 @@ def treinar_modelo(df, features, target):
             random_state=42,
             verbose=-1
         )
+        y_train_log = np.log1p(y_train)
+        y_val_log = np.log1p(y_val)
         model.fit(
-            X_train, y_train,
-            eval_set=[(X_val, y_val)],
+            X_train, y_train_log,
+            eval_set=[(X_val, y_val_log)],
             callbacks=[lgb.early_stopping(50, verbose=False)]
         )
-        preds = model.predict(X_val)
+        preds = np.expm1(model.predict(X_val))
         mae = mean_absolute_error(y_val, preds)
         rmse = np.sqrt(mean_squared_error(y_val, preds))
         r2 = r2_score(y_val, preds)
         mae_scores.append(mae)
         rmse_scores.append(rmse)
         r2_scores.append(r2)
-        print(f"Fold {fold + 1}/3 -> MAE: {mae:.2f}h | RMSE: {rmse:.2f}h | R2: {r2:.3f}")
+        print(
+            f"Fold {fold + 1}/3 -> MAE: {mae:.2f}h | RMSE: {rmse:.2f}h | R2: {r2:.3f}"
+        )
     print("=" * 70)
     print("RESULTADO FINAL (Cross-Validation)")
     print("=" * 70)
@@ -480,7 +620,7 @@ def treinar_modelo(df, features, target):
         random_state=42,
         verbose=-1
     )
-    model_final.fit(X, y)
+    model_final.fit(X, np.log1p(y))
     importance = pd.DataFrame({
         'feature': features,
         'importance': model_final.feature_importances_
@@ -491,12 +631,106 @@ def treinar_modelo(df, features, target):
     return model_final, importance
 
 
+def treinar_classificador(df, features, target):
+    """Classifica o tempo de espera em faixas (curta/media/longa)."""
+    print("=" * 70)
+    print("TREINAMENTO DO MODELO (LightGBM - Classificacao)")
+    print("=" * 70)
+    df = df.sort_values('data_chegada_dt').reset_index(drop=True)
+    cutoff = df['data_chegada_dt'].max() - pd.DateOffset(months=6)
+    train_df = df[df['data_chegada_dt'] < cutoff].copy()
+    test_df = df[df['data_chegada_dt'] >= cutoff].copy()
+    if train_df.empty or test_df.empty:
+        raise ValueError("Split temporal invalido: ajuste o periodo de teste.")
+
+    y_train = classificar_espera(train_df[target])
+    y_test = classificar_espera(test_df[target])
+    X_train = train_df[features].copy()
+    X_test = test_df[features].copy()
+
+    cat_features = [
+        'nome_porto', 'nome_terminal', 'tipo_navegacao',
+        'tipo_carga', 'natureza_carga', 'cdmercadoria', 'stsh4'
+    ]
+    for col in cat_features:
+        X_train[col] = X_train[col].astype('category')
+        X_test[col] = X_test[col].astype('category')
+
+    model = lgb.LGBMClassifier(
+        objective='multiclass',
+        num_class=3,
+        n_estimators=400,
+        learning_rate=0.05,
+        max_depth=7,
+        num_leaves=31,
+        class_weight='balanced',
+        random_state=42
+    )
+    model.fit(X_train, y_train)
+    preds = model.predict(X_test)
+    proba = model.predict_proba(X_test)
+
+    auc = roc_auc_score(y_test, proba, multi_class='ovo', average='macro')
+    print(f"AUC-ROC (macro): {auc:.3f}")
+    print("Matriz de confusao:")
+    print(confusion_matrix(y_test, preds))
+    print("Relatorio:")
+    print(classification_report(y_test, preds, digits=3))
+    return model
+
+
+def treinar_modelo_xgboost(df, features, target):
+    """Treina modelo XGBoost com validação temporal (últimos 6 meses)."""
+    print("=" * 70)
+    print("TREINAMENTO DO MODELO (XGBoost)")
+    print("=" * 70)
+    df = df.sort_values('data_chegada_dt').reset_index(drop=True)
+    cutoff = df['data_chegada_dt'].max() - pd.DateOffset(months=6)
+    train_df = df[df['data_chegada_dt'] < cutoff].copy()
+    test_df = df[df['data_chegada_dt'] >= cutoff].copy()
+    if train_df.empty or test_df.empty:
+        raise ValueError("Split temporal invalido: ajuste o periodo de teste.")
+
+    X_train = train_df[features].copy()
+    y_train = train_df[target].copy()
+    X_test = test_df[features].copy()
+    y_test = test_df[target].copy()
+
+    cat_cols = [
+        'nome_porto', 'nome_terminal', 'tipo_navegacao',
+        'tipo_carga', 'natureza_carga', 'cdmercadoria', 'stsh4'
+    ]
+    X_train = pd.get_dummies(X_train, columns=cat_cols, dummy_na=True)
+    X_test = pd.get_dummies(X_test, columns=cat_cols, dummy_na=True)
+    X_test = X_test.reindex(columns=X_train.columns, fill_value=0)
+
+    model = xgb.XGBRegressor(
+        objective='reg:squarederror',
+        n_estimators=500,
+        learning_rate=0.05,
+        max_depth=6,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=42,
+        tree_method='hist'
+    )
+    model.fit(X_train, y_train)
+    preds = model.predict(X_test)
+    mae = mean_absolute_error(y_test, preds)
+    rmse = np.sqrt(mean_squared_error(y_test, preds))
+    r2 = r2_score(y_test, preds)
+    print(f"Teste (ultimos 6 meses) -> MAE: {mae:.2f}h | RMSE: {rmse:.2f}h | R2: {r2:.3f}")
+    return model
+
+
 def main():
     print("=" * 70)
     print("MODELO DE PREVISAO DE TEMPO DE ESPERA PARA ATRACACAO")
     print("=" * 70)
     df_final, features, target = preparar_dados()
     treinar_modelo(df_final, features, target)
+    treinar_modelo_xgboost(df_final, features, target)
+    treinar_classificador(df_final, features, target)
     print("=" * 70)
     print("PIPELINE COMPLETO EXECUTADO COM SUCESSO")
     print("=" * 70)
