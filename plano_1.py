@@ -21,6 +21,42 @@ from sklearn.metrics import (
 
 warnings.filterwarnings('ignore')
 
+# Perfis de modelagem por mercadoria (ajustar conforme base)
+PROFILES_TO_RUN = ["VEGETAL"]
+
+# HS/mercadoria (cdmercadoria) conforme mapeamento SH4
+CARGA_PROFILES = {
+    'VEGETAL': [
+        '1201',  # soja
+        '1005',  # milho
+        '1701',  # acucar
+        '2304',  # farelo de soja
+        '1001',  # trigo
+        '1003',  # cevada
+        '1006',  # arroz
+        '1107',  # malte
+        '2302',  # farelos diversos
+        '2306',  # tortas de oleaginosas
+        '1205',  # colza
+        '1206',  # girassol
+    ],
+    'MINERAL': [
+        '2601',  # minerio de ferro
+        '2606',  # bauxita
+        '2602',  # manganes
+        '2501',  # sal
+        '2523',  # cimento/clinker
+        '2603',  # cobre
+        '2510',  # fosfatos naturais
+    ],
+    'FERTILIZANTE': [
+        '3102',  # nitrogenados (ureia)
+        '3104',  # potassicos (kcl)
+        '3105',  # compostos (npk)
+        '3103',  # fosfatados
+        '3101',  # organicos
+    ],
+}
 
 def extrair_dados_antaq_carga(project_id='antaqdados'):
     """Extrai dados de atracacao e carga da ANTAQ."""
@@ -247,6 +283,13 @@ def filtrar_granel_solido(df):
     return df[mask]
 
 
+def filtrar_por_cdmercadoria(df, include_codes):
+    """Filtra linhas com cdmercadoria na lista informada."""
+    df = df.copy()
+    mask = df['cdmercadoria'].isin(include_codes)
+    return df[mask]
+
+
 def normalizar_texto(valor):
     """Normaliza texto para comparacao simples."""
     if pd.isna(valor):
@@ -386,6 +429,21 @@ def criar_features_climaticas_avancadas(df):
     return df
 
 
+def criar_chuva_acumulada_ultimos_3dias(df):
+    """Soma chuva de D-1, D-2 e D-3 por estacao."""
+    print("Calculando chuva acumulada ultimos 3 dias...")
+    df = df.sort_values(['id_estacao', 'data_chegada_date']).reset_index(drop=True)
+    df['chuva_acumulada_ultimos_3dias'] = (
+        df.groupby('id_estacao')['precipitacao_dia']
+        .rolling(window=3, min_periods=1)
+        .sum()
+        .shift(1)
+        .reset_index(level=0, drop=True)
+    )
+    df['chuva_acumulada_ultimos_3dias'] = df['chuva_acumulada_ultimos_3dias'].fillna(0.0)
+    return df
+
+
 def criar_features_commodities(df):
     """Identifica commodities e cria indices de mercado."""
     print("Criando features de commodities...")
@@ -492,6 +550,9 @@ def preparar_dados():
     print("=" * 70)
     df_antaq = extrair_dados_antaq_carga()
     df_antaq = filtrar_granel_solido(df_antaq)
+    profile_key = PROFILE.upper()
+    if profile_key in CARGA_PROFILES:
+        df_antaq = filtrar_por_cdmercadoria(df_antaq, CARGA_PROFILES[profile_key])
     station_map = mapear_estacoes_por_municipio(df_antaq)
     df_antaq['id_estacao'] = df_antaq['municipio'].map(station_map)
     station_ids = [sid for sid in df_antaq['id_estacao'].dropna().unique()]
@@ -508,6 +569,8 @@ def preparar_dados():
     df = criar_features_temporais(df)
     df = criar_target_encoding_porto(df)
     df = criar_features_climaticas_avancadas(df)
+    if PROFILE.upper() == "VEGETAL":
+        df = criar_chuva_acumulada_ultimos_3dias(df)
     df = criar_features_commodities(df)
     df = calcular_fila_no_momento(df)
     df = calcular_densidade_fila(df)
@@ -527,6 +590,8 @@ def preparar_dados():
         'preco_soja_mensal', 'preco_milho_mensal', 'preco_algodao_mensal',
         'indice_pressao_soja', 'indice_pressao_milho'
     ]
+    if PROFILE.upper() == "VEGETAL":
+        features.append('chuva_acumulada_ultimos_3dias')
     target = 'tempo_espera_horas'
     df_final = df[features + [target, 'data_chegada_dt']].dropna()
     print("=" * 70)
@@ -767,10 +832,22 @@ def main():
     print("=" * 70)
     print("MODELO DE PREVISAO DE TEMPO DE ESPERA PARA ATRACACAO")
     print("=" * 70)
-    df_final, features, target = preparar_dados()
-    treinar_modelo(df_final, features, target)
-    treinar_modelo_xgboost(df_final, features, target)
-    treinar_classificador(df_final, features, target)
+    if PROFILES_TO_RUN:
+        for profile in PROFILES_TO_RUN:
+            global PROFILE
+            PROFILE = profile
+            print("\n" + "=" * 70)
+            print(f"PERFIL: {PROFILE}")
+            print("=" * 70)
+            df_final, features, target = preparar_dados()
+            treinar_modelo(df_final, features, target)
+            treinar_modelo_xgboost(df_final, features, target)
+            treinar_classificador(df_final, features, target)
+    else:
+        df_final, features, target = preparar_dados()
+        treinar_modelo(df_final, features, target)
+        treinar_modelo_xgboost(df_final, features, target)
+        treinar_classificador(df_final, features, target)
     print("=" * 70)
     print("PIPELINE COMPLETO EXECUTADO COM SUCESSO")
     print("=" * 70)
