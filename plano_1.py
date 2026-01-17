@@ -242,7 +242,8 @@ def integrar_clima_com_atracacao(df_antaq, df_clima):
 def filtrar_granel_solido(df):
     """Filtra apenas cargas de granel solido."""
     df = df.copy()
-    mask = df['natureza_carga'].astype(str).str.contains('granel', case=False, na=False)
+    natureza_norm = df['natureza_carga'].apply(normalizar_texto)
+    mask = natureza_norm.str.contains('GRANELSOLIDO', na=False)
     return df[mask]
 
 
@@ -421,6 +422,23 @@ def criar_features_temporais(df):
     return df
 
 
+def criar_target_encoding_porto(df):
+    """Media historica de espera por porto (sem vazamento)."""
+    print("Calculando target encoding por porto...")
+    df = df.sort_values(['nome_porto', 'data_chegada_dt']).reset_index(drop=True)
+    df['porto_tempo_medio_historico'] = (
+        df.groupby('nome_porto')['tempo_espera_horas']
+        .expanding()
+        .mean()
+        .shift(1)
+        .reset_index(level=0, drop=True)
+    )
+    df['porto_tempo_medio_historico'] = df['porto_tempo_medio_historico'].fillna(
+        df['tempo_espera_horas'].median()
+    )
+    return df
+
+
 def calcular_densidade_fila(df):
     """Calcula densidade de fila por terminal."""
     print("Calculando densidade de fila...")
@@ -488,6 +506,7 @@ def preparar_dados():
     print("=" * 70)
     df = calcular_target(df)
     df = criar_features_temporais(df)
+    df = criar_target_encoding_porto(df)
     df = criar_features_climaticas_avancadas(df)
     df = criar_features_commodities(df)
     df = calcular_fila_no_momento(df)
@@ -498,7 +517,7 @@ def preparar_dados():
         'natureza_carga', 'cdmercadoria', 'stsh4',
         'movimentacao_total_toneladas', 'mes', 'dia_semana',
         'navios_no_fundeio_na_chegada', 'navios_na_fila_7d', 'tempo_espera_ma5',
-        'dia_do_ano',
+        'dia_do_ano', 'porto_tempo_medio_historico',
         'temp_media_dia', 'precipitacao_dia', 'vento_rajada_max_dia',
         'umidade_media_dia', 'amplitude_termica',
         'restricao_vento', 'restricao_chuva',
@@ -720,6 +739,27 @@ def treinar_modelo_xgboost(df, features, target):
     rmse = np.sqrt(mean_squared_error(y_test, preds))
     r2 = r2_score(y_test, preds)
     print(f"Teste (ultimos 6 meses) -> MAE: {mae:.2f}h | RMSE: {rmse:.2f}h | R2: {r2:.3f}")
+    booster = model.get_booster()
+    score = booster.get_score(importance_type='gain')
+    if score:
+        imp = pd.DataFrame([
+            {'feature': k, 'gain': v} for k, v in score.items()
+        ]).sort_values('gain', ascending=False)
+        imp.to_csv('xgb_feature_importance.csv', index=False)
+        print("Top 15 features (XGBoost gain):")
+        print(imp.head(15).to_string(index=False))
+        try:
+            import matplotlib.pyplot as plt
+            ax = imp.head(20).plot.barh(x='feature', y='gain', legend=False, figsize=(8, 6))
+            ax.invert_yaxis()
+            ax.set_title('XGBoost Feature Importance (gain)')
+            ax.set_xlabel('gain')
+            plt.tight_layout()
+            plt.savefig('xgb_feature_importance.png', dpi=150)
+            plt.close()
+            print("Salvo: xgb_feature_importance.png")
+        except Exception:
+            print("Matplotlib indisponivel; salvei apenas xgb_feature_importance.csv")
     return model
 
 
