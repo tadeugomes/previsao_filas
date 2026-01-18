@@ -2,12 +2,11 @@ import json
 import pickle
 import re
 import unicodedata
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
-import logging
 import numpy as np
-import pandas as pd
+import pandas as pdz
 import requests
 import streamlit as st
 from google.cloud import bigquery
@@ -20,16 +19,6 @@ MODEL_DIR = Path("models")
 MODEL_METADATA_PATH = MODEL_DIR / "vegetal_metadata.json"
 PREDICTED_DIR = Path("lineups_previstos")
 PREMIUM_REGISTRY_PATH = Path("premium_registry.json")
-LOG_DIR = Path("logs")
-LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-logger = logging.getLogger("previsao_filas")
-if not logger.handlers:
-    logger.setLevel(logging.INFO)
-    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
-    file_handler = logging.FileHandler(LOG_DIR / "app.log", encoding="utf-8")
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
 PORT_MUNICIPIO_UF = {
     "ITAQUI": {"municipio": "SAO LUIS", "uf": "MA"},
     "PONTA_DA_MADEIRA": {"municipio": "SAO LUIS", "uf": "MA"},
@@ -614,7 +603,6 @@ def predict_lineup_basico(df_lineup, live_data, porto_nome):
                     preds = ensemble.predict(features_data)
                 preds_horas = pd.Series(preds).apply(lambda v: float(max(0.0, v)))
             except Exception:
-                logger.exception("Erro interno (ensemble basico): %s", profile)
                 preds_horas = None
         if preds_horas is None:
             preds_horas = pd.Series(models["model_reg"].predict(features_data)).apply(
@@ -622,21 +610,15 @@ def predict_lineup_basico(df_lineup, live_data, porto_nome):
             )
         sub["tempo_espera_previsto_horas"] = preds_horas.round(2)
         sub["tempo_espera_previsto_dias"] = (sub["tempo_espera_previsto_horas"] / 24.0).round(2)
+        class_pred = models["model_clf"].predict(features_data)
+        class_map = {0: "Rapido", 1: "Medio", 2: "Longo"}
+        risco_map = {0: "Baixo", 1: "Medio", 2: "Alto"}
+        sub["classe_espera_prevista"] = pd.Series(class_pred).map(class_map).fillna("Desconhecido")
+        sub["risco_previsto"] = pd.Series(class_pred).map(risco_map).fillna("Desconhecido")
         try:
-            class_pred = models["model_clf"].predict(features_data)
-            class_map = {0: "Rapido", 1: "Medio", 2: "Longo"}
-            risco_map = {0: "Baixo", 1: "Medio", 2: "Alto"}
-            sub["classe_espera_prevista"] = pd.Series(class_pred).map(class_map).fillna("Desconhecido")
-            sub["risco_previsto"] = pd.Series(class_pred).map(risco_map).fillna("Desconhecido")
-            try:
-                proba = models["model_clf"].predict_proba(features_data)
-                sub["probabilidade_prevista"] = np.max(proba, axis=1).round(3)
-            except Exception:
-                sub["probabilidade_prevista"] = np.nan
+            proba = models["model_clf"].predict_proba(features_data)
+            sub["probabilidade_prevista"] = np.max(proba, axis=1).round(3)
         except Exception:
-            logger.exception("Erro interno (classificador basico): %s", profile)
-            sub["classe_espera_prevista"] = "Indisponivel"
-            sub["risco_previsto"] = "Indisponivel"
             sub["probabilidade_prevista"] = np.nan
         dfs.append(sub)
     df_out = pd.concat(dfs, ignore_index=True)
@@ -683,27 +665,13 @@ def inferir_lineup_inteligente(lineup_df, live_data, porto_nome, tem_dados_termi
             profiles = premium_cfg.get("profiles") or ["MINERAL"]
             mask = df_out["perfil"].isin(profiles)
             if mask.any():
-                try:
-                    X_premium_lgb = builder(df_out.loc[mask], premium)
-                    X_premium_xgb = X_premium_lgb
-                    try:
-                        xgb_model = getattr(premium["ensemble"], "xgb_model", None)
-                        if xgb_model is not None:
-                            feature_names = xgb_model.get_booster().feature_names
-                            if feature_names:
-                                X_premium_xgb = X_premium_lgb.reindex(
-                                    columns=feature_names, fill_value=0
-                                )
-                    except Exception:
-                        X_premium_xgb = X_premium_lgb
-                    preds = premium["ensemble"].predict(X_premium_xgb, X_lgb=X_premium_lgb)
-                    preds = pd.Series(preds).apply(lambda v: float(max(0.0, v)))
-                    df_out.loc[mask, "tempo_espera_previsto_horas"] = preds.round(2)
-                    df_out.loc[mask, "tempo_espera_previsto_dias"] = (preds / 24.0).round(2)
-                    df_out.loc[mask, "mae_esperado"] = premium_cfg.get("mae_esperado", 30)
-                    df_out.loc[mask, "tier"] = "PREMIUM"
-                except Exception:
-                    logger.exception("Erro interno (premium): %s", porto_nome)
+                X_premium = builder(df_out.loc[mask], premium)
+                preds = premium["ensemble"].predict(X_premium)
+                preds = pd.Series(preds).apply(lambda v: float(max(0.0, v)))
+                df_out.loc[mask, "tempo_espera_previsto_horas"] = preds.round(2)
+                df_out.loc[mask, "tempo_espera_previsto_dias"] = (preds / 24.0).round(2)
+                df_out.loc[mask, "mae_esperado"] = premium_cfg.get("mae_esperado", 30)
+                df_out.loc[mask, "tier"] = "PREMIUM"
 
     eta = pd.to_datetime(df_out["data_chegada_dt"], errors="coerce")
     eta_espera = eta + pd.to_timedelta(df_out["tempo_espera_previsto_horas"].fillna(0), unit="h")
@@ -932,32 +900,8 @@ with st.sidebar:
 
     perfil_porto = infer_port_profile(df_lineup, porto_selecionado)
     opcoes_carga = CARGA_OPCOES_POR_PERFIL.get(perfil_porto, CARGA_OPCOES_POR_PERFIL["VEGETAL"])
-    if not opcoes_carga:
-        st.warning("Lista de carga indisponivel. Usando lista padrao.")
-        opcoes_carga = CARGA_OPCOES_POR_PERFIL["VEGETAL"]
     tipo_carga = st.selectbox("Tipo de Carga", opcoes_carga)
-
-    today = datetime.today().date()
-    min_data = today - timedelta(days=30)
-    max_data = today + timedelta(days=90)
-    if "data_chegada_valid" not in st.session_state:
-        st.session_state["data_chegada_valid"] = today
-    data_chegada = st.date_input(
-        "Data de Chegada",
-        value=st.session_state["data_chegada_valid"],
-        min_value=min_data,
-        max_value=max_data,
-        key="data_chegada",
-    )
-    if data_chegada < min_data or data_chegada > max_data:
-        st.warning(
-            "Data invalida. Use o calendario (30 dias no passado ate 90 dias no futuro). "
-            "Valor resetado."
-        )
-        st.session_state["data_chegada"] = st.session_state["data_chegada_valid"]
-        data_chegada = st.session_state["data_chegada_valid"]
-    else:
-        st.session_state["data_chegada_valid"] = data_chegada
+    data_chegada = st.date_input("Data de Chegada", value=datetime.today())
 
     berco_selecionado = "Todos"
     if porto_selecionado != "NACIONAL" and not df_lineup.empty and "Berco" in df_lineup.columns:
@@ -996,41 +940,17 @@ with st.sidebar:
         except Exception:
             default_chuva = 0.0
     editar_clima = st.checkbox("Editar clima manualmente", value=False)
-    if st.session_state.get("chuva_porto") != porto_selecionado:
-        st.session_state["chuva_prevista_valid"] = default_chuva
-        st.session_state["chuva_porto"] = porto_selecionado
     chuva_prevista = st.number_input(
         "Chuva acumulada 72h (mm)",
         min_value=0.0,
-        value=st.session_state.get("chuva_prevista_valid", default_chuva),
-        key="chuva_prevista",
-        help="Informe em milimetros (mm) acumulados nas ultimas 72h.",
+        value=default_chuva,
         disabled=not editar_clima,
     )
-    if chuva_prevista < 0:
-        st.warning("O valor deve ser maior ou igual a 0.")
-        st.session_state["chuva_prevista"] = st.session_state.get(
-            "chuva_prevista_valid", default_chuva
-        )
-        chuva_prevista = st.session_state["chuva_prevista"]
-    else:
-        st.session_state["chuva_prevista_valid"] = chuva_prevista
 
     st.markdown("### Condicoes Operacionais")
     default_fila = compute_default_fila(df_lineup, lineup_path)
     st.session_state["fila_base"] = default_fila
-    fila_atual = st.number_input(
-        "Navios no fundeio",
-        min_value=0,
-        value=default_fila,
-        key="fila_atual",
-    )
-    if fila_atual < 0:
-        st.warning("O valor deve ser maior ou igual a 0.")
-        st.session_state["fila_atual"] = st.session_state.get("fila_atual_valid", default_fila)
-        fila_atual = st.session_state["fila_atual"]
-    else:
-        st.session_state["fila_atual_valid"] = fila_atual
+    fila_atual = st.number_input("Navios no fundeio", min_value=0, value=default_fila)
 gerar = st.button("Gerar Previsao", use_container_width=True)
 if porto_selecionado == "NACIONAL":
     pergunta_modelo = "Qual a previsao nacional de tempo de espera nos portos brasileiros?"
@@ -1138,30 +1058,18 @@ def compute_results():
         tem_dados_terminal = has_terminal_data(df_lineup)
         if lineup_path and lineup_path.suffix.lower() == ".xlsx":
             tem_dados_terminal = True
-        logger.info(
-            "Inferencia solicitada: porto=%s, berco=%s, navio=%s, tipo_navio=%s, premium=%s",
-            porto_selecionado,
-            berco_selecionado,
-            navio_selecionado,
-            tipo_navio_selecionado,
-            tem_dados_terminal,
+        df_pred = inferir_lineup_inteligente(
+            df_lineup,
+            live_data,
+            porto_selecionado.upper(),
+            tem_dados_terminal=tem_dados_terminal,
         )
-        try:
-            df_pred = inferir_lineup_inteligente(
-                df_lineup,
-                live_data,
-                porto_selecionado.upper(),
-                tem_dados_terminal=tem_dados_terminal,
-            )
-            if "tier" in df_pred.columns and df_pred["tier"].eq("PREMIUM").any():
-                modo = "PREMIUM"
-            PREDICTED_DIR.mkdir(parents=True, exist_ok=True)
-            data_tag = datetime.today().strftime("%Y%m%d")
-            output_path = PREDICTED_DIR / f"lineup_previsto_{porto_selecionado}_{data_tag}.csv"
-            df_pred.to_csv(output_path, index=False)
-        except Exception:
-            logger.exception("Erro interno (inferencia)")
-            df_pred = None
+        if "tier" in df_pred.columns and df_pred["tier"].eq("PREMIUM").any():
+            modo = "PREMIUM"
+        PREDICTED_DIR.mkdir(parents=True, exist_ok=True)
+        data_tag = datetime.today().strftime("%Y%m%d")
+        output_path = PREDICTED_DIR / f"lineup_previsto_{porto_selecionado}_{data_tag}.csv"
+        df_pred.to_csv(output_path, index=False)
 
     df_pred_view = df_pred
     if df_pred is not None and berco_selecionado != "Todos" and "Berco" in df_pred.columns:
@@ -1372,7 +1280,7 @@ if gerar or st.session_state["resultado"] is None or st.session_state["params_ke
 resultado = st.session_state.get("resultado")
 
 if st.session_state.get("erro_resultado"):
-    logger.error("Erro interno (app): %s", st.session_state["erro_resultado"])
+    st.error(f"Falha ao gerar previsao: {st.session_state['erro_resultado']}")
 
 if not resultado:
     st.info("Defina os parametros na barra lateral e clique em Gerar Previsao.")
@@ -1422,16 +1330,6 @@ with tabs[0]:
         f"<div class='callout'>{resultado['mensagem_espera']}</div>",
         unsafe_allow_html=True,
     )
-    if resultado.get("df_pred_view") is not None and not resultado["df_pred_view"].empty:
-        csv_bytes = resultado["df_pred_view"].to_csv(index=False).encode("utf-8")
-        export_name = f"lineup_previsto_{porto_selecionado}_{datetime.today().strftime('%Y%m%d')}.csv"
-        st.download_button(
-            "Exportar CSV",
-            data=csv_bytes,
-            file_name=export_name,
-            mime="text/csv",
-            use_container_width=True,
-        )
 
     render_section_title("Tendencia da Fila", ICON_TREND)
     st.line_chart(resultado["trend"], x="data", y="espera_horas")
