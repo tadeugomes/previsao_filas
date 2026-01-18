@@ -2,9 +2,10 @@ import json
 import pickle
 import re
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
+import logging
 import numpy as np
 import pandas as pd
 import requests
@@ -19,6 +20,16 @@ MODEL_DIR = Path("models")
 MODEL_METADATA_PATH = MODEL_DIR / "vegetal_metadata.json"
 PREDICTED_DIR = Path("lineups_previstos")
 PREMIUM_REGISTRY_PATH = Path("premium_registry.json")
+LOG_DIR = Path("logs")
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+logger = logging.getLogger("previsao_filas")
+if not logger.handlers:
+    logger.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+    file_handler = logging.FileHandler(LOG_DIR / "app.log", encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
 PORT_MUNICIPIO_UF = {
     "ITAQUI": {"municipio": "SAO LUIS", "uf": "MA"},
     "PONTA_DA_MADEIRA": {"municipio": "SAO LUIS", "uf": "MA"},
@@ -45,6 +56,15 @@ CARGA_OPCOES_POR_PERFIL = {
     "MINERAL": ["Minerio de Ferro", "Bauxita", "Manganes", "Cimento/Clinker", "Cobre", "Fosfatos"],
     "FERTILIZANTE": ["Ureia", "KCL", "NPK", "Fosfatado", "Nitrogenado", "Potassico", "Organico"],
 }
+BASE_CAT_FEATURES = [
+    "nome_porto",
+    "nome_terminal",
+    "tipo_navegacao",
+    "tipo_carga",
+    "natureza_carga",
+    "cdmercadoria",
+    "stsh4",
+]
 
 
 @st.cache_data
@@ -74,6 +94,9 @@ def load_real_data(lineup_path):
             df_lineup = df_lineup.rename(columns=rename_map)
         else:
             df_lineup = pd.read_csv(lineup_path)
+            df_lineup = df_lineup.rename(
+                columns={c: normalize_column_name(c) for c in df_lineup.columns}
+            )
             rename_map = {
                 "navio": "Navio",
                 "carga": "Mercadoria",
@@ -248,14 +271,28 @@ def get_premium_config(porto_nome):
 
 
 def infer_port_profile(df_lineup, porto_nome):
+    premium_cfg = get_premium_config(porto_nome)
+    if premium_cfg and premium_cfg.get("profiles"):
+        return premium_cfg["profiles"][0]
     if df_lineup is not None and not df_lineup.empty:
         profiles = df_lineup.apply(get_profile_from_row, axis=1)
         if not profiles.empty:
             return profiles.value_counts().idxmax()
-    premium_cfg = get_premium_config(porto_nome)
-    if premium_cfg and premium_cfg.get("profiles"):
-        return premium_cfg["profiles"][0]
     return "VEGETAL"
+
+
+def compute_default_fila(df_lineup, lineup_path):
+    if df_lineup is None or df_lineup.empty:
+        return 0
+    if lineup_path and lineup_path.suffix.lower() == ".xlsx":
+        for col in ["Chegada", "Atracacao"]:
+            if col in df_lineup.columns:
+                dates = pd.to_datetime(df_lineup[col], errors="coerce", dayfirst=True)
+                if dates.notna().any():
+                    ref = dates.max()
+                    window_start = ref - pd.Timedelta(days=7)
+                    return int((dates >= window_start).sum())
+    return int(len(df_lineup))
 
 
 def has_terminal_data(df_lineup):
@@ -279,6 +316,15 @@ def normalize_column_name(valor):
     texto = "".join(ch for ch in texto if not unicodedata.combining(ch))
     texto = re.sub(r"[^A-Za-z0-9]+", "_", texto).strip("_").lower()
     return texto
+
+
+def find_column_by_norm(df, candidates):
+    norm_map = {normalize_column_name(c): c for c in df.columns}
+    for candidate in candidates:
+        key = normalize_column_name(candidate)
+        if key in norm_map:
+            return norm_map[key]
+    return None
 
 
 @st.cache_data(ttl=21600)
@@ -468,19 +514,23 @@ def build_features_from_lineup(df_lineup, metadata, live_data, porto_nome):
         )
 
     X = df[features].copy()
-    cat_features = [
-        "nome_porto",
-        "nome_terminal",
-        "tipo_navegacao",
-        "tipo_carga",
-        "natureza_carga",
-        "cdmercadoria",
-        "stsh4",
-    ]
-    for col in cat_features:
+    for col in BASE_CAT_FEATURES:
         if col in X.columns:
             X[col] = X[col].astype("category")
     return X
+
+
+def build_xgb_features_from_lgb(X_lgb, model_xgb):
+    cat_cols = [col for col in BASE_CAT_FEATURES if col in X_lgb.columns]
+    X_xgb = pd.get_dummies(X_lgb.copy(), columns=cat_cols, dummy_na=True)
+    feature_names = None
+    try:
+        feature_names = model_xgb.get_booster().feature_names
+    except Exception:
+        feature_names = None
+    if feature_names:
+        X_xgb = X_xgb.reindex(columns=feature_names, fill_value=0)
+    return X_xgb
 
 
 def build_premium_features_ponta_da_madeira(df_lineup, model_info):
@@ -553,24 +603,40 @@ def predict_lineup_basico(df_lineup, live_data, porto_nome):
             dfs.append(sub)
             continue
         features_data = build_features_from_lineup(sub, models["metadata"], live_data, porto_nome)
+        preds_horas = None
         if models.get("model_ensemble") is not None:
-            preds = models["model_ensemble"].predict(features_data)
-            preds_horas = pd.Series(preds).apply(lambda v: float(max(0.0, v)))
-        else:
+            ensemble = models["model_ensemble"]
+            try:
+                if hasattr(ensemble, "xgb_model"):
+                    X_xgb = build_xgb_features_from_lgb(features_data, ensemble.xgb_model)
+                    preds = ensemble.predict(X_xgb, X_lgb=features_data)
+                else:
+                    preds = ensemble.predict(features_data)
+                preds_horas = pd.Series(preds).apply(lambda v: float(max(0.0, v)))
+            except Exception:
+                logger.exception("Erro interno (ensemble basico): %s", profile)
+                preds_horas = None
+        if preds_horas is None:
             preds_horas = pd.Series(models["model_reg"].predict(features_data)).apply(
                 lambda v: float(max(0.0, np.expm1(v)))
             )
         sub["tempo_espera_previsto_horas"] = preds_horas.round(2)
         sub["tempo_espera_previsto_dias"] = (sub["tempo_espera_previsto_horas"] / 24.0).round(2)
-        class_pred = models["model_clf"].predict(features_data)
-        class_map = {0: "Rapido", 1: "Medio", 2: "Longo"}
-        risco_map = {0: "Baixo", 1: "Medio", 2: "Alto"}
-        sub["classe_espera_prevista"] = pd.Series(class_pred).map(class_map).fillna("Desconhecido")
-        sub["risco_previsto"] = pd.Series(class_pred).map(risco_map).fillna("Desconhecido")
         try:
-            proba = models["model_clf"].predict_proba(features_data)
-            sub["probabilidade_prevista"] = np.max(proba, axis=1).round(3)
+            class_pred = models["model_clf"].predict(features_data)
+            class_map = {0: "Rapido", 1: "Medio", 2: "Longo"}
+            risco_map = {0: "Baixo", 1: "Medio", 2: "Alto"}
+            sub["classe_espera_prevista"] = pd.Series(class_pred).map(class_map).fillna("Desconhecido")
+            sub["risco_previsto"] = pd.Series(class_pred).map(risco_map).fillna("Desconhecido")
+            try:
+                proba = models["model_clf"].predict_proba(features_data)
+                sub["probabilidade_prevista"] = np.max(proba, axis=1).round(3)
+            except Exception:
+                sub["probabilidade_prevista"] = np.nan
         except Exception:
+            logger.exception("Erro interno (classificador basico): %s", profile)
+            sub["classe_espera_prevista"] = "Indisponivel"
+            sub["risco_previsto"] = "Indisponivel"
             sub["probabilidade_prevista"] = np.nan
         dfs.append(sub)
     df_out = pd.concat(dfs, ignore_index=True)
@@ -617,13 +683,27 @@ def inferir_lineup_inteligente(lineup_df, live_data, porto_nome, tem_dados_termi
             profiles = premium_cfg.get("profiles") or ["MINERAL"]
             mask = df_out["perfil"].isin(profiles)
             if mask.any():
-                X_premium = builder(df_out.loc[mask], premium)
-                preds = premium["ensemble"].predict(X_premium)
-                preds = pd.Series(preds).apply(lambda v: float(max(0.0, v)))
-                df_out.loc[mask, "tempo_espera_previsto_horas"] = preds.round(2)
-                df_out.loc[mask, "tempo_espera_previsto_dias"] = (preds / 24.0).round(2)
-                df_out.loc[mask, "mae_esperado"] = premium_cfg.get("mae_esperado", 30)
-                df_out.loc[mask, "tier"] = "PREMIUM"
+                try:
+                    X_premium_lgb = builder(df_out.loc[mask], premium)
+                    X_premium_xgb = X_premium_lgb
+                    try:
+                        xgb_model = getattr(premium["ensemble"], "xgb_model", None)
+                        if xgb_model is not None:
+                            feature_names = xgb_model.get_booster().feature_names
+                            if feature_names:
+                                X_premium_xgb = X_premium_lgb.reindex(
+                                    columns=feature_names, fill_value=0
+                                )
+                    except Exception:
+                        X_premium_xgb = X_premium_lgb
+                    preds = premium["ensemble"].predict(X_premium_xgb, X_lgb=X_premium_lgb)
+                    preds = pd.Series(preds).apply(lambda v: float(max(0.0, v)))
+                    df_out.loc[mask, "tempo_espera_previsto_horas"] = preds.round(2)
+                    df_out.loc[mask, "tempo_espera_previsto_dias"] = (preds / 24.0).round(2)
+                    df_out.loc[mask, "mae_esperado"] = premium_cfg.get("mae_esperado", 30)
+                    df_out.loc[mask, "tier"] = "PREMIUM"
+                except Exception:
+                    logger.exception("Erro interno (premium): %s", porto_nome)
 
     eta = pd.to_datetime(df_out["data_chegada_dt"], errors="coerce")
     eta_espera = eta + pd.to_timedelta(df_out["tempo_espera_previsto_horas"].fillna(0), unit="h")
@@ -642,154 +722,403 @@ def calcular_risco(chuva_mm_3d, fila_atual, fila_media):
 
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
-st.title(APP_TITLE)
+st.markdown(
+    """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Roboto:wght@400;500;600&family=Inter:wght@600;700&display=swap');
+:root {
+  --ink: #0A2342;
+  --muted: #1E5F9C;
+  --accent: #F29F05;
+  --bg: #F2F4F7;
+  --card: #FFFFFF;
+  --border: #D7DEE8;
+}
+html, body, [class*="css"] {
+  font-family: "Roboto", sans-serif;
+  color: var(--ink);
+}
+.stApp {
+  background: var(--bg);
+}
+section[data-testid="stSidebar"] > div {
+  background: linear-gradient(180deg, #0A2342, #1E5F9C);
+  color: #FFFFFF;
+}
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] span,
+section[data-testid="stSidebar"] p {
+  color: #FFFFFF !important;
+}
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3 {
+  color: #FFFFFF !important;
+}
+section[data-testid="stSidebar"] button {
+  background: var(--accent);
+  color: #0A2342;
+  border: none;
+  border-radius: 4px;
+  font-weight: 600;
+}
+section[data-testid="stSidebar"] button:hover {
+  background: #e38904;
+}
+.hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-radius: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(10, 35, 66, 0.12);
+  margin-bottom: 18px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #0A2342, #1E5F9C);
+  color: #FFFFFF;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.06em;
+}
+.brand-title {
+  font-family: "Montserrat", sans-serif;
+  font-size: 24px;
+  font-weight: 700;
+}
+.brand-subtitle {
+  color: var(--muted);
+  font-size: 14px;
+  max-width: 620px;
+}
+.section-title {
+  font-family: "Montserrat", sans-serif;
+  font-size: 18px;
+  margin: 18px 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.section-title svg {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+  stroke: var(--accent);
+}
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 14px 16px;
+  box-shadow: 0 6px 16px rgba(10, 35, 66, 0.08);
+}
+.card-label {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.card-value {
+  font-family: "Inter", sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  margin-top: 6px;
+}
+.panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 16px;
+  box-shadow: 0 6px 18px rgba(10, 35, 66, 0.08);
+}
+.callout {
+  background: #E8F2FF;
+  border-left: 4px solid var(--accent);
+  color: var(--ink);
+  border-radius: 4px;
+  padding: 12px 16px;
+  font-weight: 600;
+}
+.mode-banner {
+  background: #E8F2FF;
+  border-left: 4px solid var(--muted);
+  color: #000000;
+  border-radius: 4px;
+  padding: 10px 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.mode-banner.premium {
+  border-left-color: var(--accent);
+}
+.question-text {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 6px;
+}
+.panel-list {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--muted);
+}
+.footer {
+  margin-top: 24px;
+  padding: 12px 16px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: #FFFFFF;
+  color: var(--muted);
+  font-size: 12px;
+}
+@media (max-width: 980px) {
+  .card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+  .hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
 
-tab_geral, tab_porto = st.tabs(["Modelo Geral", "Modelo por Porto"])
+st.markdown(
+    """
+<div class="hero">
+  <div class="brand">
+    <div class="logo">PF</div>
+    <div>
+      <div class="brand-title">Previsao de Fila - Vegetal (MVP)</div>
+      <div class="brand-subtitle">Sistema de previsao de espera e atracacao baseado em dados operacionais e modelos de machine learning.</div>
+    </div>
+  </div>
+</div>
+""",
+    unsafe_allow_html=True,
+)
 
-with tab_geral:
+with st.sidebar:
+    st.markdown("## Selecao de Parametros")
     lineup_files = list_lineup_files()
-    modelos = load_models()
-    ultima_atualizacao = None
-    if lineup_files:
-        ultima_atualizacao = max(f.stat().st_mtime for f in lineup_files)
-        ultima_atualizacao = datetime.fromtimestamp(ultima_atualizacao).strftime("%d/%m/%Y %H:%M")
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric("Cobertura do modelo", "Nacional")
-    kpi2.metric("Line-ups locais", len(lineup_files))
-    kpi3.metric("Ultima atualizacao", ultima_atualizacao or "-")
-    kpi4.metric("Fonte", "ANTAQ/INMET/IBGE/IPEA")
-
-    col1 = st.container()
-    with col1:
-        st.subheader("Entrada")
-        chegada = st.date_input("Data Estimada de Chegada (ETA)", value=datetime.today(), key="geral_eta")
-        produto = st.selectbox(
-            "Tipo de Carga",
-            ["Soja em Graos", "Farelo", "Milho", "Acucar", "Trigo", "Cevada", "Malte"],
-            key="geral_produto",
-        )
-        chuva_prevista = st.number_input(
-            "Previsao Climatica (Acumulado 72h)",
-            min_value=0.0,
-            value=0.0,
-            key="geral_chuva",
-        )
-        fila_atual = st.number_input(
-            "Navios aguardando no Fundeio",
-            min_value=0,
-            value=0,
-            key="geral_fila",
-        )
-
-    st.divider()
-    with st.container():
-        st.subheader("Resultado da Previsao")
-        fila_media = 10
-        risco, cor, motivo = calcular_risco(chuva_prevista, fila_atual, fila_media)
-
-        if risco == "Baixo":
-            estimativa = "2 a 3 dias"
-            tendencia = "Fluxo Normal"
-            dias_min, dias_max = 2, 3
-        elif risco == "Medio":
-            estimativa = "3 a 5 dias"
-            tendencia = "Congestionamento Moderado"
-            dias_min, dias_max = 3, 5
-        else:
-            estimativa = "5 a 7 dias"
-            tendencia = "Congestionamento Critico"
-            dias_min, dias_max = 5, 7
-
-        data_prevista = chegada + pd.Timedelta(days=dias_max)
-        st.metric("Estimativa de espera", estimativa)
-        st.metric("Atracacao prevista", data_prevista.strftime("%d/%m (%A)"))
-        st.metric("Tendencia", tendencia)
-        st.metric("Risco", f"{risco} ({motivo})")
-
-        st.caption("Regras: chuva > 10mm ou fila acima da media elevam risco. Chuva > 20mm ou fila > 20 = critico.")
-
-with tab_porto:
-    col1 = st.container()
-    with col1:
-        st.subheader("Entrada")
-        lineup_files = list_lineup_files()
-        portos = ["(selecione)"] + [f.stem for f in lineup_files]
-        porto_selecionado = st.selectbox("Porto", portos, key="porto_select")
+    portos = ["NACIONAL"] + [f.stem for f in lineup_files]
+    porto_selecionado = st.selectbox("Porto", portos)
+    lineup_path = None
+    if porto_selecionado != "NACIONAL":
         lineup_path = next((p for p in lineup_files if p.stem == porto_selecionado), None)
-        df_lineup, meta = load_real_data(lineup_path)
-        berco_opcoes = ["Todos"]
-        if not df_lineup.empty and "Berco" in df_lineup.columns:
-            berco_opcoes += sorted(df_lineup["Berco"].dropna().unique().tolist())
-        berco_selecionado = st.selectbox("Porto/Berco", berco_opcoes, key="porto_berco")
-        models = load_models()
+    df_lineup, meta = load_real_data(lineup_path)
 
-        chegada = st.date_input("Data Estimada de Chegada (ETA)", value=datetime.today(), key="porto_eta")
-        perfil_porto = infer_port_profile(df_lineup, porto_selecionado)
-        opcoes_carga = CARGA_OPCOES_POR_PERFIL.get(perfil_porto, CARGA_OPCOES_POR_PERFIL["VEGETAL"])
-        produto = st.selectbox(
-            "Tipo de Carga",
-            opcoes_carga,
-            key="porto_produto",
+    perfil_porto = infer_port_profile(df_lineup, porto_selecionado)
+    opcoes_carga = CARGA_OPCOES_POR_PERFIL.get(perfil_porto, CARGA_OPCOES_POR_PERFIL["VEGETAL"])
+    if not opcoes_carga:
+        st.warning("Lista de carga indisponivel. Usando lista padrao.")
+        opcoes_carga = CARGA_OPCOES_POR_PERFIL["VEGETAL"]
+    tipo_carga = st.selectbox("Tipo de Carga", opcoes_carga)
+
+    today = datetime.today().date()
+    min_data = today - timedelta(days=30)
+    max_data = today + timedelta(days=90)
+    if "data_chegada_valid" not in st.session_state:
+        st.session_state["data_chegada_valid"] = today
+    data_chegada = st.date_input(
+        "Data de Chegada",
+        value=st.session_state["data_chegada_valid"],
+        min_value=min_data,
+        max_value=max_data,
+        key="data_chegada",
+    )
+    if data_chegada < min_data or data_chegada > max_data:
+        st.warning(
+            "Data invalida. Use o calendario (30 dias no passado ate 90 dias no futuro). "
+            "Valor resetado."
         )
-
-        default_chuva = 0.0
-        default_fila = int(df_lineup.shape[0]) if not df_lineup.empty else 0
-        if porto_selecionado != "(selecione)":
-            try:
-                porto_key = porto_selecionado.upper()
-                porto_cfg = PORT_MUNICIPIO_UF.get(porto_key, {})
-                municipio = porto_cfg.get("municipio", porto_selecionado)
-                station_id = fetch_inmet_station_id(municipio=municipio)
-                clima = fetch_inmet_latest(station_id) or {}
-                default_chuva = float(clima.get("chuva_acumulada_ultimos_3dias", 0.0))
-            except Exception:
-                default_chuva = 0.0
-
-        chuva_prevista = float(default_chuva)
-        st.metric("Previsao Climatica (Acumulado 72h)", f"{chuva_prevista:.1f} mm")
-        fila_atual = st.number_input(
-            "Navios aguardando no Fundeio",
-            min_value=0,
-            value=default_fila,
-            key="porto_fila",
-        )
-
-    st.divider()
-    with st.container():
-        st.subheader("Resultado da Previsao")
-        fila_media = max(int(df_lineup.shape[0] / 2), 10) if not df_lineup.empty else 10
-        risco, cor, motivo = calcular_risco(chuva_prevista, fila_atual, fila_media)
-
-        if risco == "Baixo":
-            estimativa = "2 a 3 dias"
-            tendencia = "Fluxo Normal"
-            dias_min, dias_max = 2, 3
-        elif risco == "Medio":
-            estimativa = "3 a 5 dias"
-            tendencia = "Congestionamento Moderado"
-            dias_min, dias_max = 3, 5
-        else:
-            estimativa = "5 a 7 dias"
-            tendencia = "Congestionamento Critico"
-            dias_min, dias_max = 5, 7
-
-        data_prevista = chegada + pd.Timedelta(days=dias_max)
-        st.metric("Estimativa de espera", estimativa)
-        st.metric("Atracacao prevista", data_prevista.strftime("%d/%m (%A)"))
-        st.metric("Tendencia", tendencia)
-        st.metric("Risco", f"{risco} ({motivo})")
-
-        st.caption("Regras: chuva > 10mm ou fila acima da media elevam risco. Chuva > 20mm ou fila > 20 = critico.")
-
-    st.divider()
-
-    st.subheader("Line-up publico (se disponivel)")
-    if porto_selecionado == "(selecione)":
-        st.info("Selecione um porto para carregar o line-up.")
-    elif df_lineup.empty:
-        st.info("Aguardando atualizacao do line-up oficial... (Use o simulador manual acima)")
+        st.session_state["data_chegada"] = st.session_state["data_chegada_valid"]
+        data_chegada = st.session_state["data_chegada_valid"]
     else:
-        live_data = {"clima": None, "pam": None, "precos": None}
+        st.session_state["data_chegada_valid"] = data_chegada
+
+    berco_selecionado = "Todos"
+    if porto_selecionado != "NACIONAL" and not df_lineup.empty and "Berco" in df_lineup.columns:
+        berco_opcoes = ["Todos"] + sorted(df_lineup["Berco"].dropna().unique().tolist())
+        berco_selecionado = st.selectbox("Berco", berco_opcoes)
+
+    navio_selecionado = "Todos"
+    navio_col = None
+    if porto_selecionado != "NACIONAL" and not df_lineup.empty:
+        navio_col = find_column_by_norm(df_lineup, ["Navio", "navio", "nome_navio", "embarcacao"])
+    if navio_col:
+        navios_raw = df_lineup[navio_col].dropna().astype(str).str.strip()
+        navios = ["Todos"] + sorted(navios_raw.unique().tolist())
+        navio_selecionado = st.selectbox("Navio", navios)
+
+    tipo_navio_selecionado = "Todos"
+    tipo_navio_col = None
+    if porto_selecionado != "NACIONAL" and not df_lineup.empty:
+        tipo_navio_col = find_column_by_norm(df_lineup, ["categoria", "tipo_navio", "tipo"])
+    if tipo_navio_col:
+        tipos_raw = df_lineup[tipo_navio_col].dropna().astype(str).str.strip()
+        tipos = ["Todos"] + sorted(tipos_raw.unique().tolist())
+        tipo_navio_label = f"Tipo de Navio ({str(tipo_navio_col).title()})"
+        tipo_navio_selecionado = st.selectbox(tipo_navio_label, tipos)
+
+    st.markdown("### Condicoes Climaticas")
+    default_chuva = 0.0
+    if porto_selecionado != "NACIONAL":
+        try:
+            porto_key = porto_selecionado.upper()
+            porto_cfg = PORT_MUNICIPIO_UF.get(porto_key, {})
+            municipio = porto_cfg.get("municipio", porto_selecionado)
+            station_id = fetch_inmet_station_id(municipio=municipio)
+            clima = fetch_inmet_latest(station_id) or {}
+            default_chuva = float(clima.get("chuva_acumulada_ultimos_3dias", 0.0))
+        except Exception:
+            default_chuva = 0.0
+    editar_clima = st.checkbox("Editar clima manualmente", value=False)
+    if st.session_state.get("chuva_porto") != porto_selecionado:
+        st.session_state["chuva_prevista_valid"] = default_chuva
+        st.session_state["chuva_porto"] = porto_selecionado
+    chuva_prevista = st.number_input(
+        "Chuva acumulada 72h (mm)",
+        min_value=0.0,
+        value=st.session_state.get("chuva_prevista_valid", default_chuva),
+        key="chuva_prevista",
+        help="Informe em milimetros (mm) acumulados nas ultimas 72h.",
+        disabled=not editar_clima,
+    )
+    if chuva_prevista < 0:
+        st.warning("O valor deve ser maior ou igual a 0.")
+        st.session_state["chuva_prevista"] = st.session_state.get(
+            "chuva_prevista_valid", default_chuva
+        )
+        chuva_prevista = st.session_state["chuva_prevista"]
+    else:
+        st.session_state["chuva_prevista_valid"] = chuva_prevista
+
+    st.markdown("### Condicoes Operacionais")
+    default_fila = compute_default_fila(df_lineup, lineup_path)
+    st.session_state["fila_base"] = default_fila
+    fila_atual = st.number_input(
+        "Navios no fundeio",
+        min_value=0,
+        value=default_fila,
+        key="fila_atual",
+    )
+    if fila_atual < 0:
+        st.warning("O valor deve ser maior ou igual a 0.")
+        st.session_state["fila_atual"] = st.session_state.get("fila_atual_valid", default_fila)
+        fila_atual = st.session_state["fila_atual"]
+    else:
+        st.session_state["fila_atual_valid"] = fila_atual
+gerar = st.button("Gerar Previsao", use_container_width=True)
+if porto_selecionado == "NACIONAL":
+    pergunta_modelo = "Qual a previsao nacional de tempo de espera nos portos brasileiros?"
+elif get_premium_config(porto_selecionado.upper()):
+    pergunta_modelo = (
+        "Qual a previsao de tempo de espera para o navio, berco ou categoria selecionados no terminal?"
+    )
+else:
+    pergunta_modelo = (
+        "Qual a previsao de tempo de espera para atracacao no porto selecionado?"
+    )
+st.markdown(
+    f"<div class='question-text'>Pergunta do modelo: {pergunta_modelo}</div>",
+    unsafe_allow_html=True,
+)
+
+
+def clima_tone(chuva_mm):
+    if chuva_mm > 20:
+        return "Criticas", "#F29F05"
+    if chuva_mm > 10:
+        return "Alerta", "#F29F05"
+    return "Favoraveis", "#1E5F9C"
+
+
+def format_date_short(value):
+    if value is None or pd.isna(value):
+        return "-"
+    return pd.to_datetime(value).strftime("%d/%m")
+
+
+ICON_SUMMARY = (
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+    '<line x1="18" y1="20" x2="18" y2="10"></line>'
+    '<line x1="12" y1="20" x2="12" y2="4"></line>'
+    '<line x1="6" y1="20" x2="6" y2="14"></line>'
+    "</svg>"
+)
+ICON_TREND = (
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+    '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>'
+    '<polyline points="17 6 23 6 23 12"></polyline>'
+    "</svg>"
+)
+ICON_DETAILS = (
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+    '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>'
+    '<polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>'
+    '<line x1="12" y1="22.08" x2="12" y2="12"></line>'
+    "</svg>"
+)
+ICON_INSIGHTS = (
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+    '<rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>'
+    '<rect x="9" y="9" width="6" height="6"></rect>'
+    '<line x1="9" y1="1" x2="9" y2="4"></line>'
+    '<line x1="15" y1="1" x2="15" y2="4"></line>'
+    '<line x1="9" y1="20" x2="9" y2="23"></line>'
+    '<line x1="15" y1="20" x2="15" y2="23"></line>'
+    '<line x1="20" y1="9" x2="23" y2="9"></line>'
+    '<line x1="20" y1="14" x2="23" y2="14"></line>'
+    '<line x1="1" y1="9" x2="4" y2="9"></line>'
+    '<line x1="1" y1="14" x2="4" y2="14"></line>'
+    "</svg>"
+)
+ICON_LOGS = (
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+    '<polyline points="4 17 10 11 4 5"></polyline>'
+    '<line x1="12" y1="19" x2="20" y2="19"></line>'
+    "</svg>"
+)
+
+
+def render_section_title(title, icon_svg):
+    st.markdown(
+        f"<div class='section-title'>{icon_svg}<span>{title}</span></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def compute_results():
+    live_data = {"clima": None, "pam": None, "precos": None}
+    if porto_selecionado != "NACIONAL":
         try:
             porto_key = porto_selecionado.upper()
             porto_cfg = PORT_MUNICIPIO_UF.get(porto_key, {})
@@ -802,38 +1131,357 @@ with tab_porto:
         except Exception:
             live_data = {"clima": None, "pam": None, "precos": None}
 
+    df_pred = None
+    df_pred_view = None
+    modo = "BASIC"
+    if porto_selecionado != "NACIONAL" and not df_lineup.empty:
         tem_dados_terminal = has_terminal_data(df_lineup)
         if lineup_path and lineup_path.suffix.lower() == ".xlsx":
             tem_dados_terminal = True
-        df_lineup = inferir_lineup_inteligente(
-            df_lineup,
-            live_data,
-            porto_selecionado.upper(),
-            tem_dados_terminal=tem_dados_terminal,
+        logger.info(
+            "Inferencia solicitada: porto=%s, berco=%s, navio=%s, tipo_navio=%s, premium=%s",
+            porto_selecionado,
+            berco_selecionado,
+            navio_selecionado,
+            tipo_navio_selecionado,
+            tem_dados_terminal,
         )
-        cliente_e_premium = (
-            "tier" in df_lineup.columns and df_lineup["tier"].eq("PREMIUM").any()
-        )
-        if cliente_e_premium:
-            st.info("MODO PREMIUM - Precisao aprimorada com dados do terminal")
-        else:
-            st.info("MODO BASICO - Dados publicos ANTAQ + Clima")
-        st.caption("Variaveis ao vivo carregadas de INMET/IBGE/IPEA (quando disponiveis).")
-        PREDICTED_DIR.mkdir(parents=True, exist_ok=True)
-        data_tag = datetime.today().strftime("%Y%m%d")
-        output_path = PREDICTED_DIR / f"lineup_previsto_{porto_selecionado}_{data_tag}.csv"
-        df_lineup.to_csv(output_path, index=False)
-        if berco_selecionado != "Todos" and "Berco" in df_lineup.columns:
-            df_lineup = df_lineup[df_lineup["Berco"] == berco_selecionado]
-        st.dataframe(df_lineup, use_container_width=True)
+        try:
+            df_pred = inferir_lineup_inteligente(
+                df_lineup,
+                live_data,
+                porto_selecionado.upper(),
+                tem_dados_terminal=tem_dados_terminal,
+            )
+            if "tier" in df_pred.columns and df_pred["tier"].eq("PREMIUM").any():
+                modo = "PREMIUM"
+            PREDICTED_DIR.mkdir(parents=True, exist_ok=True)
+            data_tag = datetime.today().strftime("%Y%m%d")
+            output_path = PREDICTED_DIR / f"lineup_previsto_{porto_selecionado}_{data_tag}.csv"
+            df_pred.to_csv(output_path, index=False)
+        except Exception:
+            logger.exception("Erro interno (inferencia)")
+            df_pred = None
 
-    if meta:
-        ops = meta.get("total_registros") or meta.get("n_registros")
-        acc = meta.get("auc_macro") or meta.get("acuracia_ref")
-        if ops or acc:
-            texto = "Modelo calibrado"
-            if ops:
-                texto += f" com {ops} operacoes reais"
-            if acc:
-                texto += f" (Acuracia ref: {acc})"
-            st.caption(texto)
+    df_pred_view = df_pred
+    if df_pred is not None and berco_selecionado != "Todos" and "Berco" in df_pred.columns:
+        df_pred_view = df_pred[df_pred["Berco"] == berco_selecionado]
+    if (
+        df_pred_view is not None
+        and navio_selecionado != "Todos"
+        and navio_col
+        and navio_col in df_pred_view.columns
+    ):
+        navio_norm = df_pred_view[navio_col].astype(str).str.strip()
+        df_pred_view = df_pred_view[navio_norm == str(navio_selecionado).strip()]
+    if (
+        df_pred_view is not None
+        and tipo_navio_selecionado != "Todos"
+        and tipo_navio_col
+        and tipo_navio_col in df_pred_view.columns
+    ):
+        tipo_norm = df_pred_view[tipo_navio_col].astype(str).str.strip()
+        df_pred_view = df_pred_view[tipo_norm == str(tipo_navio_selecionado).strip()]
+
+    fila_base = st.session_state.get("fila_base", 0)
+    fila_media = max(int(fila_base / 2), 10) if fila_base else 10
+    risco, _, motivo = calcular_risco(chuva_prevista, fila_atual, fila_media)
+    if risco == "Baixo":
+        estimativa = "2-3 dias"
+        dias_min, dias_max = 2, 3
+    elif risco == "Medio":
+        estimativa = "3-5 dias"
+        dias_min, dias_max = 3, 5
+    else:
+        estimativa = "5-7 dias"
+        dias_min, dias_max = 5, 7
+
+    espera_range = estimativa
+    atracacao_prevista = pd.Timestamp(data_chegada) + pd.Timedelta(days=dias_max)
+    if df_pred_view is not None and "tempo_espera_previsto_dias" in df_pred_view.columns:
+        dias = df_pred_view["tempo_espera_previsto_dias"].dropna()
+        if not dias.empty:
+            q25, q75 = dias.quantile([0.25, 0.75])
+            espera_range = f"{int(max(1, np.floor(q25)))}-{int(np.ceil(q75))} dias"
+    if df_pred_view is not None and "eta_mais_espera" in df_pred_view.columns:
+        eta_min = pd.to_datetime(df_pred_view["eta_mais_espera"], errors="coerce").min()
+        if not pd.isna(eta_min):
+            atracacao_prevista = eta_min
+
+    condicao_clima, condicao_cor = clima_tone(chuva_prevista)
+
+    trend = pd.DataFrame()
+    if df_pred_view is not None and "eta_mais_espera" in df_pred_view.columns:
+        trend = (
+            df_pred_view.assign(data_ref=pd.to_datetime(df_pred_view["eta_mais_espera"]).dt.date)
+            .groupby("data_ref")["tempo_espera_previsto_horas"]
+            .mean()
+            .reset_index()
+            .rename(columns={"data_ref": "data", "tempo_espera_previsto_horas": "espera_horas"})
+        )
+        trend["espera_horas"] = pd.to_numeric(trend["espera_horas"], errors="coerce")
+        trend["data"] = pd.to_datetime(trend["data"], errors="coerce")
+        trend = trend.dropna(subset=["data", "espera_horas"])
+    if trend.empty:
+        base = pd.date_range(datetime.today().date(), periods=7, freq="D")
+        trend = pd.DataFrame({"data": base, "espera_horas": [dias_max * 24] * 7})
+
+    berco_previsto = "-"
+    if df_pred_view is not None and "Berco" in df_pred_view.columns:
+        berco_previsto = (
+            df_pred_view["Berco"].dropna().mode().iloc[0]
+            if not df_pred_view["Berco"].dropna().empty
+            else "-"
+        )
+    tx_efetiva = (
+        pd.to_numeric(df_lineup["TX_EFETIVA"], errors="coerce").median()
+        if "TX_EFETIVA" in df_lineup.columns
+        else np.nan
+    )
+    dwt_medio = (
+        pd.to_numeric(df_lineup["DWT"], errors="coerce").median()
+        if "DWT" in df_lineup.columns
+        else np.nan
+    )
+    if not np.isnan(tx_efetiva):
+        produtividade = f"{tx_efetiva:,.0f} t/h".replace(",", ".")
+    else:
+        produtividade = "-"
+    if not np.isnan(tx_efetiva) and not np.isnan(dwt_medio) and tx_efetiva > 0:
+        tempo_operacao = f"{(dwt_medio / tx_efetiva):.1f} h"
+    else:
+        tempo_operacao = "-"
+
+    mae_esperado = None
+    if df_pred_view is not None and "mae_esperado" in df_pred_view.columns:
+        mae_esperado = df_pred_view["mae_esperado"].dropna().median()
+
+    espera_horas_estimada = None
+    if df_pred_view is not None and "tempo_espera_previsto_horas" in df_pred_view.columns:
+        espera_horas_estimada = (
+            pd.to_numeric(df_pred_view["tempo_espera_previsto_horas"], errors="coerce")
+            .dropna()
+            .median()
+        )
+    if espera_horas_estimada is None or np.isnan(espera_horas_estimada):
+        espera_horas_estimada = float(dias_max * 24)
+    mae_texto = f" (MAE esperado: ~{int(round(mae_esperado))}h)" if mae_esperado else ""
+    if navio_selecionado != "Todos":
+        alvo = f"o navio {navio_selecionado}"
+    elif tipo_navio_selecionado != "Todos":
+        alvo = f"o tipo de navio {tipo_navio_selecionado}"
+    elif berco_selecionado != "Todos":
+        alvo = f"o berco {berco_selecionado}"
+    else:
+        alvo = f"o porto {porto_selecionado}"
+    mensagem_espera = (
+        f"A previsao e de {int(round(espera_horas_estimada))} horas "
+        f"para o tempo estimado de espera de {alvo}.{mae_texto}"
+    )
+    if modo == "PREMIUM":
+        confiabilidade = "Alta"
+    elif mae_esperado is None:
+        confiabilidade = "Media"
+    elif mae_esperado <= 40:
+        confiabilidade = "Alta"
+    elif mae_esperado <= 80:
+        confiabilidade = "Media"
+    else:
+        confiabilidade = "Baixa"
+
+    insights = []
+    if chuva_prevista > 10:
+        insights.append("Chuva relevante nas proximas 72h.")
+    if fila_atual > fila_media:
+        insights.append("Fila acima da media historica do porto.")
+    if modo == "PREMIUM":
+        insights.append("Dados do terminal aplicados (premium).")
+    insights.append(f"Confiabilidade da previsao: {confiabilidade}.")
+
+    navio_previsto = "-"
+    navio_espera = "-"
+    navio_eta = "-"
+    if navio_selecionado != "Todos":
+        navio_previsto = navio_selecionado
+        if df_pred_view is not None and not df_pred_view.empty:
+            navio_row = df_pred_view.sort_values("eta_mais_espera").iloc[0]
+            navio_espera_val = navio_row.get("tempo_espera_previsto_horas")
+            if pd.notna(navio_espera_val):
+                navio_espera = f"{float(navio_espera_val):.1f} h"
+            navio_eta_val = navio_row.get("eta_mais_espera")
+            if pd.notna(navio_eta_val):
+                navio_eta = format_date_short(navio_eta_val)
+
+    tipo_navio_previsto = "-"
+    if tipo_navio_selecionado != "Todos":
+        tipo_navio_previsto = tipo_navio_selecionado
+
+    return {
+        "df_pred": df_pred,
+        "df_pred_view": df_pred_view,
+        "modo": modo,
+        "espera_range": espera_range,
+        "atracacao_prevista": atracacao_prevista,
+        "condicao_clima": condicao_clima,
+        "condicao_cor": condicao_cor,
+        "trend": trend,
+        "berco_previsto": berco_previsto,
+        "produtividade": produtividade,
+        "tempo_operacao": tempo_operacao,
+        "insights": insights,
+        "confiabilidade": confiabilidade,
+        "meta": meta,
+        "fila_media": fila_media,
+        "mensagem_espera": mensagem_espera,
+        "navio_previsto": navio_previsto,
+        "navio_espera": navio_espera,
+        "navio_eta": navio_eta,
+        "tipo_navio_previsto": tipo_navio_previsto,
+    }
+
+
+if "resultado" not in st.session_state:
+    st.session_state["resultado"] = None
+if "erro_resultado" not in st.session_state:
+    st.session_state["erro_resultado"] = None
+if "params_key" not in st.session_state:
+    st.session_state["params_key"] = None
+
+params_key = json.dumps(
+    {
+        "porto": porto_selecionado,
+        "tipo_carga": tipo_carga,
+        "data_chegada": str(data_chegada),
+        "chuva_prevista": chuva_prevista,
+        "fila_atual": fila_atual,
+        "berco": berco_selecionado,
+        "navio": navio_selecionado,
+        "tipo_navio": tipo_navio_selecionado,
+    },
+    sort_keys=True,
+)
+
+if gerar or st.session_state["resultado"] is None or st.session_state["params_key"] != params_key:
+    try:
+        st.session_state["resultado"] = compute_results()
+        st.session_state["erro_resultado"] = None
+        st.session_state["params_key"] = params_key
+    except Exception as exc:
+        st.session_state["erro_resultado"] = str(exc)
+
+resultado = st.session_state.get("resultado")
+
+if st.session_state.get("erro_resultado"):
+    logger.error("Erro interno (app): %s", st.session_state["erro_resultado"])
+
+if not resultado:
+    st.info("Defina os parametros na barra lateral e clique em Gerar Previsao.")
+    st.stop()
+
+tabs = st.tabs(["Painel", "Logs"])
+with tabs[0]:
+    display_mode = resultado["modo"]
+    if porto_selecionado != "NACIONAL" and get_premium_config(porto_selecionado.upper()):
+        display_mode = "PREMIUM"
+    if display_mode == "PREMIUM":
+        st.markdown(
+            "<div class='mode-banner premium'>MODO PREMIUM - Precisao aprimorada com dados do terminal</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            "<div class='mode-banner'>MODO BASICO - Dados publicos ANTAQ + Clima</div>",
+            unsafe_allow_html=True,
+        )
+
+    render_section_title("Resumo Executivo", ICON_SUMMARY)
+    st.markdown(
+        f"""
+<div class="card-grid">
+  <div class="card">
+    <div class="card-label">Tempo estimado de espera</div>
+    <div class="card-value" style="color: var(--accent);">{resultado['espera_range']}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Previsao de atracacao</div>
+    <div class="card-value">{format_date_short(resultado['atracacao_prevista'])}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Navios no fundeio</div>
+    <div class="card-value">{fila_atual}</div>
+  </div>
+    <div class="card">
+      <div class="card-label">Condicoes climaticas</div>
+      <div class="card-value" style="color: {resultado['condicao_cor']};">{resultado['condicao_clima']}</div>
+    </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"<div class='callout'>{resultado['mensagem_espera']}</div>",
+        unsafe_allow_html=True,
+    )
+    if resultado.get("df_pred_view") is not None and not resultado["df_pred_view"].empty:
+        csv_bytes = resultado["df_pred_view"].to_csv(index=False).encode("utf-8")
+        export_name = f"lineup_previsto_{porto_selecionado}_{datetime.today().strftime('%Y%m%d')}.csv"
+        st.download_button(
+            "Exportar CSV",
+            data=csv_bytes,
+            file_name=export_name,
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+    render_section_title("Tendencia da Fila", ICON_TREND)
+    st.line_chart(resultado["trend"], x="data", y="espera_horas")
+
+    render_section_title("Detalhes Operacionais", ICON_DETAILS)
+    st.markdown(
+        f"""
+<div class="panel">
+  <ul class="panel-list">
+      <li>Tipo de carga: {tipo_carga}</li>
+      <li>Navio selecionado: {resultado['navio_previsto']}</li>
+      <li>Tipo de navio selecionado: {resultado['tipo_navio_previsto']}</li>
+      <li>Espera prevista (navio): {resultado['navio_espera']}</li>
+      <li>ETA com espera (navio): {resultado['navio_eta']}</li>
+      <li>Berco previsto: {resultado['berco_previsto']}</li>
+      <li>Produtividade estimada: {resultado['produtividade']}</li>
+      <li>Tempo de operacao: {resultado['tempo_operacao']}</li>
+  </ul>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+    render_section_title("Insights do Modelo", ICON_INSIGHTS)
+    insights_html = "".join([f"<li>{item}</li>" for item in resultado["insights"]])
+    st.markdown(
+        f"""
+<div class="panel">
+  <ul class="panel-list">
+    {insights_html}
+  </ul>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+with tabs[1]:
+    render_section_title("Logs Tecnicos", ICON_LOGS)
+    st.write("Porto selecionado:", porto_selecionado)
+    st.write("Perfil inferido:", perfil_porto)
+    st.write("Fila media calculada:", resultado["fila_media"])
+    if resultado["df_pred_view"] is not None:
+        st.dataframe(resultado["df_pred_view"].head(200), use_container_width=True)
+    if resultado["meta"]:
+        st.json(resultado["meta"])
+
+ultima_atualizacao = "-"
+if MODEL_METADATA_PATH.exists():
+    ultima_atualizacao = datetime.fromtimestamp(MODEL_METADATA_PATH.stat().st_mtime).strftime("%d/%m/%Y")
+st.markdown(
+    f"<div class='footer'>Versao do modelo: v0.3 (Ensemble) | Ultima atualizacao: {ultima_atualizacao} | (c) 2026 - Projeto Previsao de Fila</div>",
+    unsafe_allow_html=True,
+)
