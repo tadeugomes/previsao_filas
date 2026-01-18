@@ -1,0 +1,43 @@
+{
+  "profile": "PONTA_DA_MADEIRA",
+  "features": [
+    "pier",
+    "prancha_ma5_pier",
+    "gap_prancha_pct",
+    "dwt",
+    "laytime_horas",
+    "urgencia_alta",
+    "navios_no_fundeio_na_chegada",
+    "mes",
+    "dia_ano",
+    "incoterm"
+  ],
+  "dummy_columns": [
+    "prancha_ma5_pier",
+    "gap_prancha_pct",
+    "dwt",
+    "laytime_horas",
+    "urgencia_alta",
+    "navios_no_fundeio_na_chegada",
+    "mes",
+    "dia_ano",
+    "pier_1N ",
+    "pier_AN",
+    "pier_AS",
+    "pier_CN",
+    "pier_CS",
+    "pier_nan",
+    "incoterm_CFR",
+    "incoterm_DESCONHECIDO",
+    "incoterm_FOB",
+    "incoterm_G2",
+    "incoterm_nan"
+  ],
+  "target": "tempo_espera_horas",
+  "trained_at": "2026-01-18T16:52:28Z",
+  "artifacts": {
+    "lgb_reg": "ponta_da_madeira_lgb_reg.pkl",
+    "xgb_reg": "ponta_da_madeira_xgb_reg.pkl",
+    "ensemble_reg": "ponta_da_madeira_ensemble_reg.pkl"
+  }
+}

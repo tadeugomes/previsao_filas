@@ -1,0 +1,72 @@
+{
+  "modelo": "ponta_da_madeira",
+  "treino": "2020-2022 (terminal + ANTAQ)",
+  "validacao": "2023 (ANTAQ puro)",
+  "teste": "2024-2025 (ANTAQ puro)",
+  "features": [
+    "pier",
+    "prancha_ma5_pier",
+    "gap_prancha_pct",
+    "dwt",
+    "laytime_horas",
+    "urgencia_alta",
+    "navios_no_fundeio_na_chegada",
+    "mes",
+    "dia_ano",
+    "incoterm"
+  ],
+  "dummy_columns": [
+    "prancha_ma5_pier",
+    "gap_prancha_pct",
+    "dwt",
+    "laytime_horas",
+    "urgencia_alta",
+    "navios_no_fundeio_na_chegada",
+    "mes",
+    "dia_ano",
+    "pier_1N ",
+    "pier_AN",
+    "pier_AS",
+    "pier_CN",
+    "pier_CS",
+    "pier_nan",
+    "incoterm_CFR",
+    "incoterm_DESCONHECIDO",
+    "incoterm_FOB",
+    "incoterm_G2",
+    "incoterm_nan"
+  ],
+  "metricas": {
+    "val_lgb": {
+      "mae": 160.28934287520545,
+      "rmse": 223.75283661833777,
+      "r2": -0.2849412106905409
+    },
+    "val_xgb": {
+      "mae": 160.51627581091608,
+      "rmse": 193.25759377194532,
+      "r2": 0.04144001759687255
+    },
+    "val_ensemble": {
+      "mae": 155.07080293817182,
+      "rmse": 202.60178387049,
+      "r2": -0.053495508449856066
+    },
+    "test_lgb": {
+      "mae": 112.54933275667456,
+      "rmse": 159.4391396055392,
+      "r2": -0.0889317161457408
+    },
+    "test_xgb": {
+      "mae": 141.2121932160395,
+      "rmse": 165.50034014279083,
+      "r2": -0.1732985783318457
+    },
+    "test_ensemble": {
+      "mae": 120.60590554596081,
+      "rmse": 152.66584127918384,
+      "r2": 0.0016231237347000826
+    }
+  },
+  "timestamp": "2026-01-18T16:52:28Z"
+}
