@@ -3,13 +3,15 @@
 Aplicacao Streamlit para previsao de tempo de espera em filas de atracacao.
 
 ## Visao geral
-- **Modelo Geral**: simulador simples (regras de chuva + fila).
-- **Modelo por Porto**: usa line-up por porto e aplica modelos treinados (LightGBM).
+- **Modelo Geral (Nacional)**: simulador simples (regras de chuva + fila) sem line-up.
+- **Modelo por Porto (Basico)**: usa line-up por porto e aplica modelos treinados (LightGBM/XGBoost + ensemble).
+- **Modelo Premium (Terminal)**: usa line-up com dados internos do terminal (ex.: Ponta da Madeira) para previsoes mais precisas.
 
 ## Estrutura de pastas
 - `lineups/`: arquivos CSV de line-up (um por porto). Nome do arquivo = nome do porto (ex.: `Itaqui.csv`).
 - `lineups_previstos/`: saidas geradas com previsoes por navio.
 - `models/`: artefatos do modelo treinado (`*_lgb_reg.pkl`, `*_lgb_clf.pkl`, `*_metadata.json`).
+- `premium_registry.json`: define quais portos usam modelo premium e qual builder aplicar.
 
 ## Dependencias
 ```bash
@@ -33,11 +35,48 @@ gcloud auth application-default login
 streamlit run streamlit_app.py
 ```
 
+## Interface (Streamlit)
+Sidebar (parametros):
+- Porto, Tipo de Carga, Data de Chegada.
+- Berco (se existir no line-up).
+- Navio (se existir no line-up).
+- Tipo de Navio (usa a coluna `Categoria` quando presente).
+- Clima (INMET automatico com opcao de ajuste manual).
+- Navios no fundeio (preenchido automaticamente pelo line-up).
+- Botao de exportacao CSV aparece quando ha resultados.
+
+Painel:
+- Resumo Executivo (cards), Tendencia da Fila (grafico), Detalhes Operacionais, Insights.
+- Banner de modo: Basico ou Premium.
+- Pergunta do modelo exibida abaixo do botao, variando por modo:
+  - Nacional: previsao geral do pais.
+  - Premium: previsao por navio/berco/categoria.
+  - Basico: previsao por porto.
+
+Validacoes de entrada:
+- Data de chegada limitada a 30 dias no passado ate 90 dias no futuro (reset automatico se invalida).
+- Chuva acumulada e navios no fundeio nao aceitam valores negativos (reset para ultimo valor valido).
+- Tooltip em "Chuva acumulada 72h (mm)" explica unidade.
+
+Auditoria:
+- Logs da aplicacao em `logs/app.log` (erros e inferencias).
+
 ## Fluxo de inferencia por porto
 1) Coloque um CSV ou XLSX em `lineups/` com o nome do porto (ex.: `Itaqui.csv`, `Ponta_da_Madeira.xlsx`).
 2) Selecione o porto no app.
 3) O app monta features e aplica o modelo correspondente ao perfil da carga.
-4) O resultado e salvo em `lineups_previstos/lineup_previsto_{porto}_{YYYYMMDD}.csv`.
+4) Se um navio/berco/tipo de navio for selecionado, a previsao e filtrada para esse alvo.
+5) O resultado e salvo em `lineups_previstos/lineup_previsto_{porto}_{YYYYMMDD}.csv`.
+
+## Colunas esperadas no line-up
+CSV (publico):
+- `navio`, `carga`/`produto`, `prev_chegada`, `berco`, `dwt`, `ultima_atualizacao`, `extracted_at`.
+
+XLSX (terminal):
+- `navio` (se existir), `carga`/`produto`, `chegada`, `berco`/`pier`, `dwt`, `tx_efetiva`, `tx_comercial`, `laytime`.
+- Para Ponta da Madeira, a coluna `categoria` habilita o filtro de tipo de navio.
+
+Obs: o filtro de navio so aparece quando ha coluna de navio (ex.: `Navio`, `navio`, `nome_navio`, `embarcacao`).
 
 ## Modelo Ponta da Madeira (Mineral enriquecido)
 Script dedicado usando dados internos do terminal (2020-2022) + ANTAQ.
@@ -55,6 +94,7 @@ Saidas:
 
 Registro de terminais premium:
 - `premium_registry.json` define quais portos usam modelo premium e qual builder aplicar.
+  - Ponta da Madeira: usa o modelo premium e o filtro por `categoria` (tipo de navio).
 
 Resultados (ultima execucao)
 - Treino: 1,901 registros (terminal 2020-2022)
@@ -78,6 +118,7 @@ O app adiciona ao line-up:
 - Clima e producao sao obtidos ao vivo (INMET/IBGE/IPEA) por porto.
 - Se faltar ETA (`prev_chegada`), o app usa `ultima_atualizacao`/`extracted_at` como fallback.
 - O app usa o ensemble (LGBM + XGB) quando disponivel para previsao em producao.
+- A mensagem de previsao em horas inclui MAE esperado quando o modelo fornece esse dado.
 
 ## Resultados do modelo (ultimo treino)
 Data/hora: 2026-01-18 13:10
