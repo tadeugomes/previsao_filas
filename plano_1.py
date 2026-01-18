@@ -1,5 +1,9 @@
+import json
+import pickle
+import joblib
 import warnings
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -21,8 +25,21 @@ from sklearn.metrics import (
 
 warnings.filterwarnings('ignore')
 
+
+class EnsembleRegressor:
+    def __init__(self, lgb_model, xgb_model):
+        self.lgb_model = lgb_model
+        self.xgb_model = xgb_model
+
+    def predict(self, X, X_lgb=None):
+        if X_lgb is None:
+            X_lgb = X
+        pred_lgb = np.expm1(self.lgb_model.predict(X_lgb))
+        pred_xgb = self.xgb_model.predict(X)
+        return (pred_lgb + pred_xgb) / 2.0
+
 # Perfis de modelagem por mercadoria (ajustar conforme base)
-PROFILES_TO_RUN = ["VEGETAL"]
+PROFILES_TO_RUN = ["VEGETAL", "MINERAL", "FERTILIZANTE"]
 
 # HS/mercadoria (cdmercadoria) conforme mapeamento SH4
 CARGA_PROFILES = {
@@ -763,7 +780,7 @@ def treinar_classificador(df, features, target):
     return model
 
 
-def treinar_modelo_xgboost(df, features, target):
+def treinar_modelo_xgboost(df, features, target, model_reg=None):
     """Treina modelo XGBoost com validação temporal (últimos 6 meses)."""
     print("=" * 70)
     print("TREINAMENTO DO MODELO (XGBoost)")
@@ -825,7 +842,89 @@ def treinar_modelo_xgboost(df, features, target):
             print("Salvo: xgb_feature_importance.png")
         except Exception:
             print("Matplotlib indisponivel; salvei apenas xgb_feature_importance.csv")
+
+    # Experimento: hiperparametros mais agressivos com top 15 features
+    top15 = None
+    if score:
+        top15 = imp['feature'].head(15).tolist()
+    if top15:
+        X_train_top = X_train[top15].copy()
+        X_test_top = X_test[top15].copy()
+        model_agressivo = xgb.XGBRegressor(
+            objective='reg:squarederror',
+            n_estimators=2000,
+            max_depth=10,
+            learning_rate=0.02,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            reg_alpha=0.1,
+            reg_lambda=0.1,
+            random_state=42,
+            tree_method='hist'
+        )
+        model_agressivo.fit(X_train_top, y_train)
+        preds_agressivo = model_agressivo.predict(X_test_top)
+        mae_agressivo = mean_absolute_error(y_test, preds_agressivo)
+        rmse_agressivo = np.sqrt(mean_squared_error(y_test, preds_agressivo))
+        r2_agressivo = r2_score(y_test, preds_agressivo)
+        print(
+            f"XGB agressivo (Top 15) -> MAE: {mae_agressivo:.2f}h | "
+            f"RMSE: {rmse_agressivo:.2f}h | R2: {r2_agressivo:.3f}"
+        )
+        if mae_agressivo < mae:
+            print("XGB agressivo melhorou MAE; mantendo o modelo agressivo.")
+            model = model_agressivo
+            preds = preds_agressivo
+            mae = mae_agressivo
+
+    # Ensemble simples com LightGBM (se disponivel)
+    if model_reg is not None:
+        X_test_lgb = test_df[features].copy()
+        cat_features = [
+            'nome_porto', 'nome_terminal', 'tipo_navegacao',
+            'tipo_carga', 'natureza_carga', 'cdmercadoria', 'stsh4'
+        ]
+        for col in cat_features:
+            X_test_lgb[col] = X_test_lgb[col].astype('category')
+        lgbm_pred = np.expm1(model_reg.predict(X_test_lgb))
+        ens_pred = (lgbm_pred + preds) / 2.0
+        mae_ens = mean_absolute_error(y_test, ens_pred)
+        rmse_ens = np.sqrt(mean_squared_error(y_test, ens_pred))
+        r2_ens = r2_score(y_test, ens_pred)
+        print(
+            f"Ensemble (LGBM + XGB) -> MAE: {mae_ens:.2f}h | "
+            f"RMSE: {rmse_ens:.2f}h | R2: {r2_ens:.3f}"
+        )
+
     return model
+
+
+def salvar_modelos(profile, features, target, model_reg, model_clf, model_xgb):
+    output_dir = Path("models")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    artifacts = {
+        "profile": profile,
+        "features": features,
+        "target": target,
+        "trained_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "artifacts": {
+            "lgb_reg": f"{profile.lower()}_lgb_reg.pkl",
+            "lgb_clf": f"{profile.lower()}_lgb_clf.pkl",
+            "xgb_reg": f"{profile.lower()}_xgb_reg.pkl",
+            "ensemble_reg": f"{profile.lower()}_ensemble_reg.pkl",
+        },
+    }
+    with (output_dir / artifacts["artifacts"]["lgb_reg"]).open("wb") as f:
+        pickle.dump(model_reg, f)
+    with (output_dir / artifacts["artifacts"]["lgb_clf"]).open("wb") as f:
+        pickle.dump(model_clf, f)
+    with (output_dir / artifacts["artifacts"]["xgb_reg"]).open("wb") as f:
+        pickle.dump(model_xgb, f)
+    ensemble = EnsembleRegressor(model_reg, model_xgb)
+    joblib.dump(ensemble, output_dir / artifacts["artifacts"]["ensemble_reg"])
+    with (output_dir / f"{profile.lower()}_metadata.json").open("w", encoding="utf-8") as f:
+        json.dump(artifacts, f, ensure_ascii=True, indent=2)
+    print(f"Modelos salvos em: {output_dir.resolve()}")
 
 
 def main():
@@ -840,14 +939,17 @@ def main():
             print(f"PERFIL: {PROFILE}")
             print("=" * 70)
             df_final, features, target = preparar_dados()
-            treinar_modelo(df_final, features, target)
-            treinar_modelo_xgboost(df_final, features, target)
-            treinar_classificador(df_final, features, target)
+            model_reg, _ = treinar_modelo(df_final, features, target)
+            model_xgb = treinar_modelo_xgboost(df_final, features, target, model_reg=model_reg)
+            model_clf = treinar_classificador(df_final, features, target)
+            salvar_modelos(PROFILE, features, target, model_reg, model_clf, model_xgb)
     else:
         df_final, features, target = preparar_dados()
-        treinar_modelo(df_final, features, target)
-        treinar_modelo_xgboost(df_final, features, target)
-        treinar_classificador(df_final, features, target)
+        model_reg, _ = treinar_modelo(df_final, features, target)
+        model_xgb = treinar_modelo_xgboost(df_final, features, target, model_reg=model_reg)
+        model_clf = treinar_classificador(df_final, features, target)
+        profile_name = globals().get("PROFILE", "default")
+        salvar_modelos(profile_name, features, target, model_reg, model_clf, model_xgb)
     print("=" * 70)
     print("PIPELINE COMPLETO EXECUTADO COM SUCESSO")
     print("=" * 70)

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "terminals": [
+    {
+      "name": "PONTA_DA_MADEIRA",
+      "ports": [
+        "PONTA_DA_MADEIRA",
+        "PONTA DA MADEIRA"
+      ],
+      "profiles": [
+        "MINERAL"
+      ],
+      "mae_esperado": 30,
+      "requires_terminal_data": true,
+      "metadata_path": "models/ponta_da_madeira_metadata.json",
+      "builder": "ponta_da_madeira"
+    }
+  ]
+}
