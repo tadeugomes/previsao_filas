@@ -25,6 +25,9 @@ from sklearn.metrics import (
 
 warnings.filterwarnings('ignore')
 
+AIS_FEATURES_PATH = Path("data/ais_features.parquet")
+PORT_MAPPING_PATH = Path("data/port_mapping.csv")
+
 
 class EnsembleRegressor:
     def __init__(self, lgb_model, xgb_model):
@@ -316,6 +319,74 @@ def normalizar_texto(valor):
     return re.sub(r'[^A-Z0-9]', '', texto)
 
 
+def _load_port_mapping():
+    if not PORT_MAPPING_PATH.exists():
+        return {}
+    mapping_df = pd.read_csv(PORT_MAPPING_PATH)
+    if mapping_df.empty:
+        return {}
+    mapping_df = mapping_df.dropna(subset=['portname', 'nome_porto_antaq'])
+    mapping_df['portname_norm'] = mapping_df['portname'].apply(normalizar_texto)
+    mapping_df['nome_porto_norm'] = mapping_df['nome_porto_antaq'].apply(normalizar_texto)
+    return dict(zip(mapping_df['nome_porto_norm'], mapping_df['portname_norm']))
+
+
+def integrar_ais_features(df, ais_path=AIS_FEATURES_PATH):
+    """Integra features AIS por porto/dia (agregadas)."""
+    df = df.copy()
+    feature_cols = [
+        'ais_navios_no_raio',
+        'ais_fila_ao_largo',
+        'ais_velocidade_media_kn',
+        'ais_eta_media_horas',
+        'ais_dist_media_km',
+    ]
+    if not Path(ais_path).exists():
+        print("WARN. AIS features nao encontradas; preenchendo zeros.")
+        for col in feature_cols:
+            df[col] = 0.0
+        return df
+
+    ais = (
+        pd.read_parquet(ais_path)
+        if str(ais_path).lower().endswith(".parquet")
+        else pd.read_csv(ais_path, low_memory=False)
+    )
+    if ais.empty:
+        for col in feature_cols:
+            df[col] = 0.0
+        return df
+
+    if 'port_name' in ais.columns:
+        ais_port_col = 'port_name'
+    else:
+        ais_port_col = 'portname'
+
+    ais['date'] = pd.to_datetime(ais['date'], errors='coerce').dt.date
+    ais = ais.dropna(subset=['date', ais_port_col])
+    ais['portname_norm'] = ais[ais_port_col].apply(normalizar_texto)
+
+    mapping = _load_port_mapping()
+    df['porto_norm'] = df['nome_porto'].apply(normalizar_texto)
+    df['ais_norm'] = df['porto_norm'].map(mapping).fillna(df['porto_norm'])
+    df['data_chegada_date'] = df['data_chegada_dt'].dt.date
+
+    merged = df.merge(
+        ais[['date', 'portname_norm'] + feature_cols],
+        left_on=['data_chegada_date', 'ais_norm'],
+        right_on=['date', 'portname_norm'],
+        how='left'
+    )
+
+    for col in feature_cols:
+        merged[col] = merged[col].fillna(0.0)
+
+    return merged.drop(
+        columns=['date', 'portname_norm', 'ais_norm', 'porto_norm', 'data_chegada_date'],
+        errors='ignore'
+    )
+
+
 def mapear_estacoes_por_municipio(df_antaq, project_id='antaqdados'):
     """Mapeia municipio para id_estacao usando tabela de estacoes do INMET."""
     client = bigquery.Client(project=project_id)
@@ -589,6 +660,7 @@ def preparar_dados():
     if PROFILE.upper() == "VEGETAL":
         df = criar_chuva_acumulada_ultimos_3dias(df)
     df = criar_features_commodities(df)
+    df = integrar_ais_features(df)
     df = calcular_fila_no_momento(df)
     df = calcular_densidade_fila(df)
     df = criar_lag_features(df)
@@ -605,7 +677,9 @@ def preparar_dados():
         'periodo_safra',
         'producao_soja', 'producao_milho', 'producao_algodao',
         'preco_soja_mensal', 'preco_milho_mensal', 'preco_algodao_mensal',
-        'indice_pressao_soja', 'indice_pressao_milho'
+        'indice_pressao_soja', 'indice_pressao_milho',
+        'ais_navios_no_raio', 'ais_fila_ao_largo', 'ais_velocidade_media_kn',
+        'ais_eta_media_horas', 'ais_dist_media_km'
     ]
     if PROFILE.upper() == "VEGETAL":
         features.append('chuva_acumulada_ultimos_3dias')
