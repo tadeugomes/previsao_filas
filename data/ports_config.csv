@@ -1,0 +1,7 @@
+port_key,port_name,lat,lon,radius_km,antaq_port_name
+itaqui,Itaqui,-2.5900,-44.3600,50,ITAQUI
+ponta_da_madeira,Ponta da Madeira,-2.5700,-44.3500,50,PONTA DA MADEIRA
+santos,Santos,-23.9600,-46.3000,60,SANTOS
+paranagua,Paranagua,-25.5160,-48.5220,60,PARANAGUA
+rio_grande,Rio Grande,-32.0350,-52.0980,60,RIO GRANDE
+sao_francisco,Sao Francisco do Sul,-26.2400,-48.6350,50,SAO FRANCISCO DO SUL

@@ -19,6 +19,8 @@ MODEL_DIR = Path("models")
 MODEL_METADATA_PATH = MODEL_DIR / "vegetal_metadata.json"
 PREDICTED_DIR = Path("lineups_previstos")
 PREMIUM_REGISTRY_PATH = Path("premium_registry.json")
+AIS_FEATURES_DIR = Path("data/ais_features")
+PORT_MAPPING_PATH = Path("data/port_mapping.csv")
 PORT_MUNICIPIO_UF = {
     "ITAQUI": {"municipio": "SAO LUIS", "uf": "MA"},
     "PONTA_DA_MADEIRA": {"municipio": "SAO LUIS", "uf": "MA"},
@@ -211,6 +213,40 @@ def load_premium_models(metadata_path):
         "ensemble": ensemble_model,
         "dummy_columns": dummy_columns,
     }
+
+
+@st.cache_data
+def load_port_mapping():
+    if not PORT_MAPPING_PATH.exists():
+        return {}
+    df_map = pd.read_csv(PORT_MAPPING_PATH)
+    if df_map.empty:
+        return {}
+    df_map = df_map.dropna(subset=["portname", "nome_porto_antaq"])
+    df_map["portname_norm"] = df_map["portname"].apply(normalizar_texto)
+    df_map["porto_norm"] = df_map["nome_porto_antaq"].apply(normalizar_texto)
+    return dict(zip(df_map["porto_norm"], df_map["portname_norm"]))
+
+
+@st.cache_data
+def load_latest_ais_features():
+    if not AIS_FEATURES_DIR.exists():
+        return None
+    files = sorted(AIS_FEATURES_DIR.glob("ais_features_*.parquet"))
+    if not files:
+        return None
+    return pd.read_parquet(files[-1])
+
+
+def filter_features_by_port(df, porto_nome, mapping):
+    if df is None or df.empty:
+        return df
+    porto_norm = normalizar_texto(porto_nome)
+    target_norm = mapping.get(porto_norm, porto_norm)
+    port_col = "portname" if "portname" in df.columns else "port_name"
+    df = df.copy()
+    df["portname_norm"] = df[port_col].apply(normalizar_texto)
+    return df[df["portname_norm"] == target_norm]
 
 
 def infer_profile(mercadoria):
@@ -501,6 +537,32 @@ def build_features_from_lineup(df_lineup, metadata, live_data, porto_nome):
         df["chuva_acumulada_ultimos_3dias"] = float(
             clima.get("chuva_acumulada_ultimos_3dias", 0.0)
         )
+
+    ais_cols = [
+        "ais_navios_no_raio",
+        "ais_fila_ao_largo",
+        "ais_velocidade_media_kn",
+        "ais_eta_media_horas",
+        "ais_dist_media_km",
+    ]
+    ais_df = live_data.get("ais_df")
+    if isinstance(ais_df, pd.DataFrame) and not ais_df.empty:
+        ais = ais_df.copy()
+        ais["ais_date"] = pd.to_datetime(ais["date"], errors="coerce").dt.date
+        ais = ais.drop(columns=["date"], errors="ignore")
+        df["data_chegada_date"] = df["data_chegada_dt"].dt.date
+        df = df.merge(ais, left_on="data_chegada_date", right_on="ais_date", how="left")
+        df = df.drop(columns=["ais_date"], errors="ignore")
+        df = df.drop(columns=["data_chegada_date"], errors="ignore")
+    for col in ais_cols:
+        if col not in df.columns:
+            df[col] = 0.0
+        else:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+
+    for col in features:
+        if col not in df.columns:
+            df[col] = 0
 
     X = df[features].copy()
     for col in BASE_CAT_FEATURES:
@@ -1050,6 +1112,12 @@ def compute_results():
             live_data["precos"] = fetch_ipea_latest()
         except Exception:
             live_data = {"clima": None, "pam": None, "precos": None}
+        port_mapping = load_port_mapping()
+        ais_df = load_latest_ais_features()
+        if ais_df is not None:
+            live_data["ais_df"] = filter_features_by_port(
+                ais_df, porto_selecionado, port_mapping
+            )
 
     df_pred = None
     df_pred_view = None

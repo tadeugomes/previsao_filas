@@ -18,6 +18,23 @@ Aplicacao Streamlit para previsao de tempo de espera em filas de atracacao.
 pip install -r requirements.txt
 ```
 
+## AIS (novos dados)
+Arquivos e configuracoes:
+- `data/ports_config.csv`: portos com lat/lon e raio (AIS).
+- `data/port_mapping.csv`: mapeamento de nomes de porto (ANTAQ/AIS).
+- `data/ais_features.parquet` (opcional): features AIS agregadas por porto/dia.
+
+Scripts (pipelines):
+```bash
+# AIS (captura diaria + features)
+set AISHUB_USER=SEU_USER
+python pipelines/ais_fetch.py --ports data/ports_config.csv --out data/ais/raw
+python pipelines/ais_features.py --input-dir data/ais/raw --date 20250118 --output data/ais_features.parquet
+```
+
+Observacoes:
+- O treino usa `ais_features.parquet` se existir (senao preenche zeros).
+
 ## Treinamento do modelo
 O treino baixa dados do ANTAQ/INMET/IBGE/IPEA via BigQuery e API IPEA.
 
@@ -67,6 +84,7 @@ Auditoria:
 3) O app monta features e aplica o modelo correspondente ao perfil da carga.
 4) Se um navio/berco/tipo de navio for selecionado, a previsao e filtrada para esse alvo.
 5) O resultado e salvo em `lineups_previstos/lineup_previsto_{porto}_{YYYYMMDD}.csv`.
+6) Se `data/ais_features.parquet` existir, as features AIS entram na inferencia.
 
 ## Colunas esperadas no line-up
 CSV (publico):
