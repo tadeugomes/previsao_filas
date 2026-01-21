@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-import pandas as pdz
+import pandas as pd
 import requests
 import streamlit as st
 from google.cloud import bigquery
@@ -14,6 +14,7 @@ import joblib
 
 APP_TITLE = "Previsao de Fila - Vegetal (MVP)"
 LINEUP_DIR = Path("lineups")
+LINEUP_HISTORY_PATH = Path("data/lineup_history.parquet")
 META_PATH = Path("data_extraction/processed/production/dataset_metadata.json")
 MODEL_DIR = Path("models")
 MODEL_METADATA_PATH = MODEL_DIR / "vegetal_metadata.json"
@@ -105,13 +106,15 @@ def load_real_data(lineup_path):
     else:
         df_lineup = pd.DataFrame(columns=["Navio", "Mercadoria", "Chegada", "Berco"])
 
+    return df_lineup, load_metadata()
+
+
+@st.cache_data
+def load_metadata():
     if META_PATH.exists():
         with META_PATH.open("r", encoding="utf-8") as f:
-            meta = json.load(f)
-    else:
-        meta = {}
-
-    return df_lineup, meta
+            return json.load(f)
+    return {}
 
 
 @st.cache_data
@@ -120,6 +123,74 @@ def list_lineup_files():
         return []
     files = list(LINEUP_DIR.glob("*.csv")) + list(LINEUP_DIR.glob("*.xlsx"))
     return sorted(files, key=lambda p: p.name.lower())
+
+
+@st.cache_data
+def load_lineup_history():
+    if not LINEUP_HISTORY_PATH.exists():
+        return pd.DataFrame()
+    df = pd.read_parquet(LINEUP_HISTORY_PATH)
+    if df.empty:
+        return df
+    df = df.copy()
+    df.columns = [normalize_column_name(c) for c in df.columns]
+    return df
+
+
+def prepare_lineup_history(df):
+    df = df.copy()
+    if "navio" in df.columns:
+        df["Navio"] = df["navio"]
+    if "produto" in df.columns:
+        df["Mercadoria"] = df["produto"]
+    elif "carga" in df.columns:
+        df["Mercadoria"] = df["carga"]
+    if "prev_chegada" in df.columns:
+        df["Chegada"] = df["prev_chegada"]
+    if "berco" in df.columns:
+        df["Berco"] = df["berco"]
+    if "dwt" in df.columns:
+        df["DWT"] = df["dwt"]
+    if "ultima_atualizacao" in df.columns:
+        df["Atualizacao"] = df["ultima_atualizacao"]
+    return df
+
+
+@st.cache_data
+def load_lineup_history_porto(porto_nome):
+    df = load_lineup_history()
+    if df.empty or "porto" not in df.columns:
+        return pd.DataFrame()
+    target = normalizar_texto(porto_nome)
+    df = df.copy()
+    df["porto_norm"] = df["porto"].apply(normalizar_texto)
+    df = df[df["porto_norm"] == target].drop(columns=["porto_norm"], errors="ignore")
+    if df.empty:
+        return df
+    return prepare_lineup_history(df)
+
+
+@st.cache_data
+def load_history_data(porto_nome):
+    df_lineup = load_lineup_history_porto(porto_nome)
+    if df_lineup.empty:
+        df_lineup = pd.DataFrame(columns=["Navio", "Mercadoria", "Chegada", "Berco"])
+    return df_lineup, load_metadata()
+
+
+@st.cache_data
+def list_lineup_ports():
+    history = load_lineup_history()
+    if history.empty or "porto" not in history.columns:
+        return []
+    return sorted(
+        history["porto"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .unique()
+        .tolist()
+    )
 
 
 @st.cache_data
@@ -349,6 +420,30 @@ def find_column_by_norm(df, candidates):
         key = normalize_column_name(candidate)
         if key in norm_map:
             return norm_map[key]
+    return None
+
+
+def format_date_short(value):
+    if value is None or pd.isna(value):
+        return "-"
+    return pd.to_datetime(value).strftime("%d/%m")
+
+
+def format_datetime_short(value):
+    if value is None or pd.isna(value):
+        return "-"
+    return pd.to_datetime(value).strftime("%d/%m %H:%M")
+
+
+def get_lineup_updated_at(df_lineup):
+    if df_lineup is None or df_lineup.empty:
+        return None
+    candidates = ["Atualizacao", "ExtraidoEm", "ultima_atualizacao", "extracted_at"]
+    for col in candidates:
+        if col in df_lineup.columns:
+            series = pd.to_datetime(df_lineup[col], errors="coerce", dayfirst=True)
+            if series.notna().any():
+                return series.max()
     return None
 
 
@@ -846,6 +941,27 @@ section[data-testid="stSidebar"] button:hover {
   color: var(--accent);
   stroke: var(--accent);
 }
+.table-title {
+  color: #000000;
+}
+.table-title svg {
+  color: #000000;
+  stroke: #000000;
+}
+.table-definitions {
+  color: #000000;
+}
+.table-definitions li {
+  color: #000000;
+}
+.table-definitions strong {
+  color: #000000;
+}
+.table-caption {
+  color: #000000;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
 .card-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -859,7 +975,7 @@ section[data-testid="stSidebar"] button:hover {
   box-shadow: 0 6px 16px rgba(10, 35, 66, 0.08);
 }
 .card-label {
-  color: var(--muted);
+  color: #1E5F9C;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -869,6 +985,14 @@ section[data-testid="stSidebar"] button:hover {
   font-size: 20px;
   font-weight: 700;
   margin-top: 6px;
+  color: #1E5F9C;
+}
+.card-sub {
+  color: #1E5F9C;
+  font-size: 11px;
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 .panel {
   background: var(--card);
@@ -952,13 +1076,14 @@ st.markdown(
 
 with st.sidebar:
     st.markdown("## Selecao de Parametros")
-    lineup_files = list_lineup_files()
-    portos = ["NACIONAL"] + [f.stem for f in lineup_files]
+    portos = list_lineup_ports()
     porto_selecionado = st.selectbox("Porto", portos)
     lineup_path = None
     if porto_selecionado != "NACIONAL":
-        lineup_path = next((p for p in lineup_files if p.stem == porto_selecionado), None)
-    df_lineup, meta = load_real_data(lineup_path)
+        df_lineup, meta = load_history_data(porto_selecionado)
+    else:
+        df_lineup, meta = load_real_data(lineup_path)
+    lineup_updated_at = get_lineup_updated_at(df_lineup)
 
     perfil_porto = infer_port_profile(df_lineup, porto_selecionado)
     opcoes_carga = CARGA_OPCOES_POR_PERFIL.get(perfil_porto, CARGA_OPCOES_POR_PERFIL["VEGETAL"])
@@ -1013,7 +1138,7 @@ with st.sidebar:
     default_fila = compute_default_fila(df_lineup, lineup_path)
     st.session_state["fila_base"] = default_fila
     fila_atual = st.number_input("Navios no fundeio", min_value=0, value=default_fila)
-gerar = st.button("Gerar Previsao", use_container_width=True)
+    gerar = st.button("Gerar Previsao", use_container_width=True)
 if porto_selecionado == "NACIONAL":
     pergunta_modelo = "Qual a previsao nacional de tempo de espera nos portos brasileiros?"
 elif get_premium_config(porto_selecionado.upper()):
@@ -1038,10 +1163,6 @@ def clima_tone(chuva_mm):
     return "Favoraveis", "#1E5F9C"
 
 
-def format_date_short(value):
-    if value is None or pd.isna(value):
-        return "-"
-    return pd.to_datetime(value).strftime("%d/%m")
 
 
 ICON_SUMMARY = (
@@ -1096,6 +1217,66 @@ def render_section_title(title, icon_svg):
         f"<div class='section-title'>{icon_svg}<span>{title}</span></div>",
         unsafe_allow_html=True,
     )
+
+
+def format_datetime_table(series):
+    values = pd.to_datetime(series, errors="coerce", dayfirst=True)
+    return values.dt.strftime("%d/%m %H:%M").fillna("-")
+
+
+def build_comparativo_lineup(df_pred_view, navio_col):
+    if df_pred_view is None or df_pred_view.empty:
+        return None
+    df = df_pred_view.reset_index(drop=True).copy()
+    navio_name_col = navio_col if navio_col in df.columns else None
+    if not navio_name_col and "Navio" in df.columns:
+        navio_name_col = "Navio"
+    df["posicao_lineup"] = np.arange(1, len(df) + 1)
+    if "eta_mais_espera" in df.columns:
+        eta = pd.to_datetime(df["eta_mais_espera"], errors="coerce")
+        df["posicao_prevista"] = eta.rank(method="first")
+    elif "tempo_espera_previsto_horas" in df.columns:
+        espera = pd.to_numeric(df["tempo_espera_previsto_horas"], errors="coerce")
+        df["posicao_prevista"] = espera.rank(method="first")
+    else:
+        df["posicao_prevista"] = df["posicao_lineup"]
+    df["posicao_prevista"] = df["posicao_prevista"].astype("Int64")
+    df["delta_posicao"] = df["posicao_prevista"] - df["posicao_lineup"]
+
+    data = {}
+    if navio_name_col:
+        data["Navio"] = df[navio_name_col].astype(str)
+    if "Berco" in df.columns:
+        data["Berco"] = df["Berco"].astype(str)
+    if "Chegada" in df.columns:
+        data["ETA_lineup"] = format_datetime_table(df["Chegada"])
+        eta_lineup = pd.to_datetime(df["Chegada"], errors="coerce", dayfirst=True)
+    else:
+        eta_lineup = pd.Series([pd.NaT] * len(df))
+    data["Posicao_lineup"] = df["posicao_lineup"]
+    data["Posicao_prevista"] = df["posicao_prevista"]
+    data["Delta_posicao"] = df["delta_posicao"]
+    if "tempo_espera_previsto_horas" in df.columns:
+        espera_prevista_h = pd.to_numeric(
+            df["tempo_espera_previsto_horas"], errors="coerce"
+        )
+        data["Espera_prevista_h"] = espera_prevista_h.round(2)
+    if "eta_mais_espera" in df.columns:
+        eta_espera = pd.to_datetime(df["eta_mais_espera"], errors="coerce")
+        data["ETA_com_espera"] = format_datetime_table(eta_espera)
+        atraso_h = (eta_espera - eta_lineup).dt.total_seconds() / 3600
+        data["Atraso_vs_ETA_h"] = atraso_h.round(2)
+    if "risco_previsto" in df.columns:
+        data["Risco"] = df["risco_previsto"].astype(str)
+    return pd.DataFrame(data)
+
+
+def style_comparativo(df):
+    highlight_cols = [col for col in ["ETA_lineup", "ETA_com_espera"] if col in df.columns]
+    if not highlight_cols:
+        return df.style
+    styles = {col: "color: #c00000; font-weight: 600;" for col in highlight_cols}
+    return df.style.set_properties(**styles, subset=highlight_cols)
 
 
 def compute_results():
@@ -1186,21 +1367,31 @@ def compute_results():
 
     condicao_clima, condicao_cor = clima_tone(chuva_prevista)
 
-    trend = pd.DataFrame()
-    if df_pred_view is not None and "eta_mais_espera" in df_pred_view.columns:
-        trend = (
-            df_pred_view.assign(data_ref=pd.to_datetime(df_pred_view["eta_mais_espera"]).dt.date)
-            .groupby("data_ref")["tempo_espera_previsto_horas"]
-            .mean()
-            .reset_index()
-            .rename(columns={"data_ref": "data", "tempo_espera_previsto_horas": "espera_horas"})
+    fila_diaria = pd.DataFrame()
+    if df_lineup is not None and not df_lineup.empty:
+        if "Chegada" in df_lineup.columns:
+            data_base = pd.to_datetime(df_lineup["Chegada"], errors="coerce", dayfirst=True)
+        else:
+            data_base = pd.Series([pd.NaT] * len(df_lineup))
+        if data_base.isna().all():
+            for fallback in ["Atualizacao", "ExtraidoEm"]:
+                if fallback in df_lineup.columns:
+                    data_base = pd.to_datetime(
+                        df_lineup[fallback], errors="coerce", dayfirst=True
+                    )
+                    if not data_base.isna().all():
+                        break
+        fila_diaria = (
+            pd.DataFrame({"data": data_base.dt.date})
+            .dropna()
+            .groupby("data")
+            .size()
+            .reset_index(name="fila")
         )
-        trend["espera_horas"] = pd.to_numeric(trend["espera_horas"], errors="coerce")
-        trend["data"] = pd.to_datetime(trend["data"], errors="coerce")
-        trend = trend.dropna(subset=["data", "espera_horas"])
-    if trend.empty:
+        fila_diaria["data"] = pd.to_datetime(fila_diaria["data"], errors="coerce")
+    if fila_diaria.empty:
         base = pd.date_range(datetime.today().date(), periods=7, freq="D")
-        trend = pd.DataFrame({"data": base, "espera_horas": [dias_max * 24] * 7})
+        fila_diaria = pd.DataFrame({"data": base, "fila": [0] * 7})
 
     berco_previsto = "-"
     if df_pred_view is not None and "Berco" in df_pred_view.columns:
@@ -1241,7 +1432,12 @@ def compute_results():
         )
     if espera_horas_estimada is None or np.isnan(espera_horas_estimada):
         espera_horas_estimada = float(dias_max * 24)
-    mae_texto = f" (MAE esperado: ~{int(round(mae_esperado))}h)" if mae_esperado else ""
+    mae_texto = (
+        f" (MAE esperado: ~{int(round(mae_esperado))}h — "
+        "margem tipica de erro do modelo)"
+        if mae_esperado
+        else ""
+    )
     if navio_selecionado != "Todos":
         alvo = f"o navio {navio_selecionado}"
     elif tipo_navio_selecionado != "Todos":
@@ -1300,7 +1496,7 @@ def compute_results():
         "atracacao_prevista": atracacao_prevista,
         "condicao_clima": condicao_clima,
         "condicao_cor": condicao_cor,
-        "trend": trend,
+        "fila_diaria": fila_diaria,
         "berco_previsto": berco_previsto,
         "produtividade": produtividade,
         "tempo_operacao": tempo_operacao,
@@ -1381,10 +1577,12 @@ with tabs[0]:
   <div class="card">
     <div class="card-label">Previsao de atracacao</div>
     <div class="card-value">{format_date_short(resultado['atracacao_prevista'])}</div>
+    <div class="card-sub">Line-up atualizado: {format_datetime_short(lineup_updated_at)}</div>
   </div>
   <div class="card">
     <div class="card-label">Navios no fundeio</div>
     <div class="card-value">{fila_atual}</div>
+    <div class="card-sub">Line-up atualizado: {format_datetime_short(lineup_updated_at)}</div>
   </div>
     <div class="card">
       <div class="card-label">Condicoes climaticas</div>
@@ -1398,9 +1596,6 @@ with tabs[0]:
         f"<div class='callout'>{resultado['mensagem_espera']}</div>",
         unsafe_allow_html=True,
     )
-
-    render_section_title("Tendencia da Fila", ICON_TREND)
-    st.line_chart(resultado["trend"], x="data", y="espera_horas")
 
     render_section_title("Detalhes Operacionais", ICON_DETAILS)
     st.markdown(
@@ -1434,6 +1629,45 @@ with tabs[0]:
         unsafe_allow_html=True,
     )
 
+    comparativo = build_comparativo_lineup(resultado["df_pred_view"], navio_col)
+    if comparativo is not None and not comparativo.empty:
+        st.markdown(
+            f"<div class='section-title table-title'>{ICON_TREND}<span>Tabela comparativa: Line-up x Modelo</span></div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<div class='table-caption'>Compara a ordem do line-up com a ordem prevista pelo modelo, "
+            "incluindo impacto esperado e ETA com espera.</div>",
+            unsafe_allow_html=True,
+        )
+        st.dataframe(style_comparativo(comparativo), use_container_width=True, height=320)
+        export_tag = normalizar_texto(porto_selecionado).lower()
+        export_name = f"comparativo_lineup_{export_tag}_{datetime.today().strftime('%Y%m%d')}.csv"
+        st.download_button(
+            "Exportar comparativo CSV",
+            data=comparativo.to_csv(index=False).encode("utf-8"),
+            file_name=export_name,
+            mime="text/csv",
+        )
+        st.markdown(
+            """
+<div class="table-definitions">
+  <strong>Definicoes da tabela</strong>
+  <ul>
+    <li>ETA_lineup: horario de chegada informado no line-up.</li>
+    <li>Posicao_lineup: ordem original do line-up (1 = primeiro).</li>
+    <li>Posicao_prevista: ordem calculada pelo modelo com base na espera prevista.</li>
+    <li>Delta_posicao: diferenca entre posicao prevista e posicao original.</li>
+    <li>Espera_prevista_h: horas estimadas de espera antes de atracar.</li>
+    <li>ETA_com_espera: tempo entre o ETA informado e o momento estimado de atracacao (ETA + espera).</li>
+    <li>Atraso_vs_ETA_h: diferenca em horas entre ETA_com_espera e ETA_lineup.</li>
+    <li>Risco: classificacao do risco operacional (baixo, medio, alto).</li>
+  </ul>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
 with tabs[1]:
     render_section_title("Logs Tecnicos", ICON_LOGS)
     st.write("Porto selecionado:", porto_selecionado)
@@ -1448,6 +1682,6 @@ ultima_atualizacao = "-"
 if MODEL_METADATA_PATH.exists():
     ultima_atualizacao = datetime.fromtimestamp(MODEL_METADATA_PATH.stat().st_mtime).strftime("%d/%m/%Y")
 st.markdown(
-    f"<div class='footer'>Versao do modelo: v0.3 (Ensemble) | Ultima atualizacao: {ultima_atualizacao} | (c) 2026 - Projeto Previsao de Fila</div>",
+    f"<div class='footer'>Ultima atualizacao: {ultima_atualizacao} | (c) 2026 - Projeto Previsao de Fila</div>",
     unsafe_allow_html=True,
 )

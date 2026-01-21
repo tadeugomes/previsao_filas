@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Previsao de Fila - Apresentacao</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #0b1d2b;
+      --ink-soft: #15344b;
+      --paper: #f4f1ea;
+      --accent: #e67e22;
+      --accent-2: #1f6f8b;
+      --bg-1: #f4f1ea;
+      --bg-2: #dfe7e9;
+      --bg-3: #f7f2e9;
+      --shadow: rgba(9, 20, 30, 0.12);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--bg-1);
+      color: var(--ink);
+      font-family: "IBM Plex Sans", sans-serif;
+    }
+    .deck {
+      height: 100%;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(900px 500px at 10% 10%, #f8e9d0 0%, transparent 55%),
+        radial-gradient(800px 600px at 90% 15%, #d7eef4 0%, transparent 50%),
+        linear-gradient(120deg, var(--bg-1), var(--bg-2));
+      padding: 24px;
+    }
+    .slide {
+      width: min(1100px, 92vw);
+      height: min(620px, 80vh);
+      background: rgba(255, 255, 255, 0.88);
+      border-radius: 24px;
+      box-shadow: 0 20px 60px var(--shadow);
+      padding: 56px 64px;
+      display: none;
+      position: relative;
+      overflow: hidden;
+      animation: slideIn 520ms ease;
+    }
+    .slide.active { display: block; }
+    .slide:after {
+      content: "";
+      position: absolute;
+      inset: 12px;
+      border-radius: 18px;
+      border: 1px solid rgba(11, 29, 43, 0.08);
+      pointer-events: none;
+    }
+    .slide-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      color: var(--accent-2);
+      text-transform: uppercase;
+      font-size: 12px;
+    }
+    .brand .logo {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent), #f0b86e);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-family: "Archivo Black", sans-serif;
+      font-size: 18px;
+    }
+    h1, h2 {
+      font-family: "Archivo Black", sans-serif;
+      margin: 0 0 14px 0;
+      letter-spacing: 0.02em;
+      color: var(--ink);
+    }
+    h1 { font-size: 52px; line-height: 1.05; }
+    h2 { font-size: 36px; }
+    p {
+      margin: 0 0 16px 0;
+      font-size: 18px;
+      line-height: 1.5;
+      color: var(--ink-soft);
+      font-family: "IBM Plex Serif", serif;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 20px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 18px;
+      padding: 20px 22px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+      border: 1px solid rgba(11, 29, 43, 0.06);
+    }
+    .card h3 {
+      margin: 0 0 8px 0;
+      font-size: 18px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent-2);
+    }
+    .card p {
+      margin: 0;
+      font-size: 16px;
+    }
+    .slide-value .card h3 {
+      font-size: 16px;
+    }
+    .slide-value .card p {
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .slide-value .card {
+      padding: 16px 18px;
+    }
+    .slide-value .grid {
+      gap: 16px;
+    }
+    .slide-value p {
+      margin-bottom: 12px;
+    }
+    .slide-value .bullets li {
+      font-size: 16px;
+    }
+    .hero-value {
+      font-size: 22px;
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .bullets {
+      list-style: none;
+      padding: 0;
+      margin: 12px 0 0 0;
+    }
+    .bullets li {
+      margin: 10px 0;
+      padding-left: 18px;
+      position: relative;
+      font-size: 18px;
+      color: var(--ink-soft);
+    }
+    .bullets li:before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      position: absolute;
+      left: 0;
+      top: 8px;
+    }
+    .footer {
+      position: absolute;
+      bottom: 22px;
+      left: 64px;
+      font-size: 12px;
+      color: #74808a;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .nav {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      display: flex;
+      gap: 10px;
+      z-index: 10;
+    }
+    .nav button {
+      border: none;
+      background: var(--ink);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .nav button:hover { background: var(--accent-2); }
+    .tag {
+      display: inline-block;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      background: #f8efe0;
+      color: #a35a17;
+      padding: 6px 10px;
+      border-radius: 999px;
+      margin-bottom: 16px;
+    }
+    .timeline {
+      display: grid;
+      gap: 14px;
+    }
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+    .timeline-item strong {
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 12px;
+      color: var(--accent-2);
+    }
+    .metric {
+      display: grid;
+      gap: 8px;
+      padding: 18px 20px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #fff, #f9f2e7);
+      border: 1px solid rgba(11, 29, 43, 0.08);
+    }
+    .metric span {
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent-2);
+    }
+    .metric strong {
+      font-size: 28px;
+      color: var(--ink);
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @media (max-width: 900px) {
+      .slide { height: auto; padding: 36px; }
+      h1 { font-size: 38px; }
+      .grid { grid-template-columns: 1fr; }
+      .timeline-item { grid-template-columns: 1fr; }
+      .footer { left: 36px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck">
+    <section class="slide active">
+      <div class="slide-header">
+        <div class="brand"><div class="logo">PF</div> Previsao de Fila</div>
+        <div class="tag">Apresentacao de Mercado</div>
+      </div>
+      <h1>Previsao de espera na atracacao, com foco no impacto financeiro.</h1>
+      <p>O app entrega previsao de fila por porto, navio ou berco, antecipando gargalos e permitindo decisao operacional com dias de antecedencia.</p>
+      <div class="grid">
+        <div class="metric">
+          <span>Problema</span>
+          <strong>Incerteza na fila</strong>
+        </div>
+        <div class="metric">
+          <span>Solucao</span>
+          <strong>Previsao orientada a negocio</strong>
+        </div>
+      </div>
+      <div class="footer">Visao geral</div>
+    </section>
+
+    <section class="slide slide-value">
+      <div class="slide-header">
+        <div class="brand"><div class="logo">PF</div> Previsao de Fila</div>
+        <div class="tag">O Que Entrega</div>
+      </div>
+      <h2>O que o app entrega em termos de negocio</h2>
+      <ul class="bullets">
+        <li>Estimativa de tempo de espera para atracacao (horas e dias).</li>
+        <li>Ranking previsto da fila (ETA mais espera) por navio e berco.</li>
+        <li>Sinais de risco (baixo, medio, alto) para apoiar negociacao e programacao.</li>
+        <li>Visao rapida de produtividade e condicoes operacionais do porto.</li>
+      </ul>
+      <div class="footer">Valor para a operacao</div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-header">
+        <div class="brand"><div class="logo">PF</div> Previsao de Fila</div>
+        <div class="tag">Por que usar o app?</div>
+      </div>
+      <h2>Por que usar o app em vez do line-up puro ou AIS isolado</h2>
+      <p><span class="tag">Exemplo Itaqui</span> Numeros ilustrativos por janela de 30 dias.</p>
+      <div class="grid">
+        <div class="card">
+          <h3>Line-up puro</h3>
+          <p>Mostra ordem atual, sem estimar espera real e impactos operacionais.</p>
+          <p><strong>Erro tipico:</strong> 2-4 dias.</p>
+        </div>
+        <div class="card">
+          <h3>AIS isolado</h3>
+          <p>Mostra posicao e movimento, sem traduzir em fila ou janela.</p>
+          <p><strong>Ganho:</strong> visibilidade sem previsao.</p>
+        </div>
+        <div class="card">
+          <h3>APP</h3>
+          <p>Converte sinais em previsao: tempo, risco e ranking de atracacao.</p>
+          <p><strong>MAE Itaqui:</strong> ~36h.</p>
+        </div>
+        <div class="card">
+          <h3>Ganho operacional</h3>
+          <p>Planejamento com antecedencia e reducao de demurrage.</p>
+          <p><strong>Impacto:</strong> 1-2 dias a menos por navio.</p>
+        </div>
+      </div>
+      <ul class="bullets">
+        <li>Itaqui: ate 12 navios/mes; 1,5 dia medio = 18 dias de fila evitados.</li>
+        <li>Demurrage: -8% a -15% em operacoes com alta variacao de ETA.</li>
+        <li>ROI: 1 decisao melhor/semana paga a assinatura em janelas criticas.</li>
+      </ul>
+      <div class="footer">Valor do app</div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-header">
+        <div class="brand"><div class="logo">PF</div> Previsao de Fila</div>
+        <div class="tag">Previsao</div>
+      </div>
+      <h2>Qual previsao o modelo faz</h2>
+      <div class="timeline">
+        <div class="timeline-item">
+          <strong>Entrada</strong>
+          <p>Line-up atual do porto (navio, mercadoria, ETA, berco) + clima + sinais de mercado.</p>
+        </div>
+        <div class="timeline-item">
+          <strong>Modelo</strong>
+          <p>Ensemble de ML com validacao temporal e perfis por tipo de carga.</p>
+        </div>
+        <div class="timeline-item">
+          <strong>Saida</strong>
+          <p>Tempo estimado de espera e ordem prevista de atracacao.</p>
+        </div>
+      </div>
+      <div class="footer">Como a previsao e gerada</div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-header">
+        <div class="brand"><div class="logo">PF</div> Previsao de Fila</div>
+        <div class="tag">Seguranca</div>
+      </div>
+      <h2>Seguranca da informacao</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Origem controlada</h3>
+          <p>Dados publicos e operacionais consolidados, com rastreabilidade por fonte e data.</p>
+        </div>
+        <div class="card">
+          <h3>Sem PII</h3>
+          <p>Informacoes tratadas por navio e operacao, sem dados pessoais sensiveis.</p>
+        </div>
+        <div class="card">
+          <h3>Governanca</h3>
+          <p>Versionamento de modelo e registro de metricas esperadas por perfil.</p>
+        </div>
+        <div class="card">
+          <h3>Resiliencia</h3>
+          <p>Fallbacks de dados e degradacao graciosa quando fontes externas falham.</p>
+        </div>
+      </div>
+      <div class="footer">Confianca e compliance</div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-header">
+        <div class="brand"><div class="logo">PF</div> Previsao de Fila</div>
+        <div class="tag">Precisao</div>
+      </div>
+      <h2>MAE por perfil (erro medio absoluto)</h2>
+      <p>O MAE indica a diferenca media entre a previsao e o ocorrido. Quanto menor, melhor.</p>
+      <div class="grid">
+        <div class="metric">
+          <span>VEGETAL</span>
+          <strong>~38h</strong>
+          <p>Erro medio de cerca de 1,6 dia. Adequado para planejamento de janela.</p>
+        </div>
+        <div class="metric">
+          <span>MINERAL</span>
+          <strong>~31h</strong>
+          <p>Erro medio de 1,3 dia. Melhor para operacao intensiva.</p>
+        </div>
+        <div class="metric">
+          <span>FERTILIZANTE</span>
+          <strong>~79h</strong>
+          <p>Erro medio de 3,3 dias. Indica maior volatilidade operacional.</p>
+        </div>
+        <div class="metric">
+          <span>INTERPRETACAO</span>
+          <strong>MAE esperado</strong>
+          <p>Usar como margem de decisao e ajuste de risco no planejamento.</p>
+        </div>
+      </div>
+      <div class="footer">Precisao por perfil</div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-header">
+        <div class="brand"><div class="logo">PF</div> Previsao de Fila</div>
+        <div class="tag">Diferenciais</div>
+      </div>
+      <h2>Ganhos versus nenhuma solucao</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Antecipacao</h3>
+          <p>Planejamento de janela operacional e atracacao com previsao objetiva.</p>
+        </div>
+        <div class="card">
+          <h3>Custo</h3>
+          <p>Reducao de demurrage e melhor alocacao de frota e berco.</p>
+        </div>
+        <div class="card">
+          <h3>Negociacao</h3>
+          <p>Argumento tecnico com risco estimado para contratos e agendas.</p>
+        </div>
+        <div class="card">
+          <h3>Transparencia</h3>
+          <p>Dashboards e dados auditaveis para decisao rapida.</p>
+        </div>
+      </div>
+      <div class="footer">Impacto de negocio</div>
+    </section>
+
+    <section class="slide">
+      <div class="slide-header">
+        <div class="brand"><div class="logo">PF</div> Previsao de Fila</div>
+        <div class="tag">Chamada</div>
+      </div>
+      <h2>Proxima etapa</h2>
+      <p class="hero-value">Piloto com 1 a 2 portos prioritarios para validar reducao de espera e ganho de produtividade.</p>
+      <ul class="bullets">
+        <li>Integracao com dados locais de terminal (premium).</li>
+        <li>Indicadores de impacto: dias economizados, fila evitada, custo evitado.</li>
+        <li>Escalabilidade para rede nacional de portos.</li>
+      </ul>
+      <div class="footer">Vamos ao piloto</div>
+    </section>
+  </main>
+
+  <div class="nav">
+    <button id="prev">Anterior</button>
+    <button id="next">Proximo</button>
+  </div>
+
+  <script>
+    const slides = Array.from(document.querySelectorAll(".slide"));
+    let index = 0;
+    const show = (i) => {
+      slides.forEach((s, idx) => s.classList.toggle("active", idx === i));
+    };
+    const next = () => {
+      index = (index + 1) % slides.length;
+      show(index);
+    };
+    const prev = () => {
+      index = (index - 1 + slides.length) % slides.length;
+      show(index);
+    };
+    document.getElementById("next").addEventListener("click", next);
+    document.getElementById("prev").addEventListener("click", prev);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowRight" || e.key === "PageDown") next();
+      if (e.key === "ArrowLeft" || e.key === "PageUp") prev();
+    });
+  </script>
+</body>
+</html>
