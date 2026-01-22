@@ -139,28 +139,33 @@ O app adiciona ao line-up:
 - A mensagem de previsao em horas inclui MAE esperado quando o modelo fornece esse dado.
 
 ## Resultados do modelo (ultimo treino)
-Data/hora: 2026-01-18 13:10
+Data/hora: 2026-01-22 10:27
+Perfis treinados: VEGETAL (baseline INMET; maré/clima mare_clima desativados)
+Nota: ablação mostrou que o baseline (INMET) superou as variações com maré/clima mare_clima neste treino.
+Resumo da ablacao (VEGETAL, Ensemble):
+- Baseline (INMET): MAE 36.78h, R2 0.627
+- INMET + clima mare_clima (sem mare): MAE 37.85h, R2 0.603
+- INMET + mare (sem clima mare_clima): MAE 37.83h, R2 0.604
+- Full (INMET + mare + clima mare_clima): MAE 37.59h, R2 0.608
 
-Registros por perfil:
+Registros por perfil (treino VEGETAL):
 - VEGETAL: 55,804
-- MINERAL: 20,893
-- FERTILIZANTE: 7,669
 
 VEGETAL
-- LightGBM (CV): MAE 46.78h +- 10.01, RMSE 75.69h +- 15.00, R2 0.302 +- 0.106
-- XGBoost (teste 6 meses): MAE 55.48h, RMSE 70.54h, R2 0.460
-- XGBoost agressivo (Top 15): MAE 46.11h, RMSE 71.50h, R2 0.446
-- Ensemble (LGBM + XGB): MAE 37.99h, RMSE 60.72h, R2 0.600
-- Classificador: AUC-ROC (macro) 0.794, acuracia 0.600
+- LightGBM (CV): MAE 46.60h +- 10.13, RMSE 75.43h +- 15.27, R2 0.308 +- 0.109
+- XGBoost (teste 6 meses): MAE 54.81h, RMSE 70.02h, R2 0.468
+- XGBoost agressivo (Top 15): MAE 43.41h, RMSE 68.17h, R2 0.496
+- Ensemble (LGBM + XGB): MAE 36.78h, RMSE 58.65h, R2 0.627
+- Classificador: AUC-ROC (macro) 0.793, acuracia 0.604
 
-MINERAL
+MINERAL (treino anterior 2026-01-18)
 - LightGBM (CV): MAE 50.61h +- 9.52, RMSE 79.35h +- 6.64, R2 0.164 +- 0.252
 - XGBoost (teste 6 meses): MAE 38.86h, RMSE 57.57h, R2 0.469
 - XGBoost agressivo (Top 15): MAE 54.41h, RMSE 77.35h, R2 0.041
 - Ensemble (LGBM + XGB): MAE 30.89h, RMSE 48.77h, R2 0.619
 - Classificador: AUC-ROC (macro) 0.828, acuracia 0.640
 
-FERTILIZANTE
+FERTILIZANTE (treino anterior 2026-01-18)
 - LightGBM (CV): MAE 102.39h +- 15.23, RMSE 150.69h +- 20.01, R2 0.366 +- 0.108
 - XGBoost (teste 6 meses): MAE 113.76h, RMSE 142.38h, R2 0.316
 - XGBoost agressivo (Top 15): MAE 144.87h, RMSE 195.88h, R2 -0.295

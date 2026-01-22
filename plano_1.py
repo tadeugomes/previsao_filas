@@ -2,6 +2,7 @@ import json
 import pickle
 import joblib
 import warnings
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -27,6 +28,40 @@ warnings.filterwarnings('ignore')
 
 AIS_FEATURES_PATH = Path("data/ais_features.parquet")
 PORT_MAPPING_PATH = Path("data/port_mapping.csv")
+MARE_DIR = Path("data/mare_clima")
+MARE_CLIMA_DATASET_1 = MARE_DIR / "portos_brasil_historico_portos_hibridos.parquet"
+MARE_CLIMA_DATASET_2 = MARE_DIR / "dados_historicos_complementares_portos_oceanicos_v2.parquet"
+MARE_CLIMA_DATASET_3 = MARE_DIR / "dados_historicos_portos_hibridos_arco_norte_v2.parquet"
+MARE_PORT_FILE_BY_NORM = {
+    "ANTONINA": "antonina_extremos_2020_2026.csv",
+    "BARCARENA": "barcarena_extremos_2020_2026.csv",
+    "ITAQUI": "itaqui_extremos_2020_2026.csv",
+    "PARANAGUA": "paranagua_extremos_2020_2026.csv",
+    "PECEM": "pecem_extremos_2020_2026.csv",
+    "RECIFE": "recife_extremos_2020_2026.csv",
+    "RIOGRANDE": "riograande_extremos_2020_2026.csv",
+    "SALVADOR": "salvador_extremos_2020_2026.csv",
+    "SANTOS": "santos_extremos_2020_2026.csv",
+    "SUAPE": "suape_extremos_2020_2026.csv",
+    "VILADOCONDE": "viladoconde_extremos_2020_2026.csv",
+}
+UF_CODES = {
+    "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA",
+    "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN",
+    "RS", "RO", "RR", "SC", "SP", "SE", "TO",
+}
+
+
+def _env_flag(name, default=True):
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in ("1", "true", "yes", "y", "on")
+
+
+USE_MARE_FEATURES = _env_flag("USE_MARE_FEATURES", True)
+USE_MARE_CLIMA = _env_flag("USE_MARE_CLIMA", True)
+SAVE_MODELS = _env_flag("SAVE_MODELS", True)
 
 
 class EnsembleRegressor:
@@ -42,7 +77,7 @@ class EnsembleRegressor:
         return (pred_lgb + pred_xgb) / 2.0
 
 # Perfis de modelagem por mercadoria (ajustar conforme base)
-PROFILES_TO_RUN = ["VEGETAL", "MINERAL", "FERTILIZANTE"]
+PROFILES_TO_RUN = ["VEGETAL"]
 
 # HS/mercadoria (cdmercadoria) conforme mapeamento SH4
 CARGA_PROFILES = {
@@ -319,6 +354,273 @@ def normalizar_texto(valor):
     return re.sub(r'[^A-Z0-9]', '', texto)
 
 
+def _normalizar_porto_base(nome_porto):
+    """Remove prefixos comuns de porto para matching com dados de maré."""
+    norm = normalizar_texto(nome_porto)
+    for prefix in ("PORTODE", "PORTODO", "PORTO"):
+        if norm.startswith(prefix):
+            return norm[len(prefix):]
+    return norm
+
+
+def _normalizar_porto_clima(nome_porto):
+    """Normaliza nome de porto (remove prefixos e UF) para clima."""
+    norm = _normalizar_porto_base(nome_porto)
+    if len(norm) > 2 and norm[-2:] in UF_CODES:
+        norm = norm[:-2]
+    return norm
+
+
+def _resolver_arquivo_mare(nome_porto):
+    """Retorna o arquivo de extremos de maré para o porto (se houver)."""
+    if not nome_porto:
+        return None
+    norm = normalizar_texto(nome_porto)
+    if norm in MARE_PORT_FILE_BY_NORM:
+        return MARE_PORT_FILE_BY_NORM[norm]
+    base = _normalizar_porto_base(nome_porto)
+    return MARE_PORT_FILE_BY_NORM.get(base)
+
+
+def _carregar_extremos_mare(caminho_csv):
+    df = pd.read_csv(caminho_csv)
+    if df.empty:
+        return df
+    df = df.rename(columns={'Data_Hora': 'data_hora', 'Altura_m': 'altura_m'})
+    df['data_hora'] = pd.to_datetime(df['data_hora'], errors='coerce')
+    df['altura_m'] = pd.to_numeric(df['altura_m'], errors='coerce')
+    df = df.dropna(subset=['data_hora', 'altura_m']).sort_values('data_hora')
+    return df[['data_hora', 'altura_m']]
+
+
+def _interpolar_mare_para_timestamps(df_extremos, timestamps):
+    """Interpola maré astronômica para timestamps (linear entre extremos)."""
+    out = pd.DataFrame(
+        index=timestamps.index,
+        data={
+            'mare_astronomica': 0.0,
+            'mare_subindo': 0,
+            'mare_horas_ate_extremo': 0.0,
+            'tem_mare_astronomica': 0,
+        },
+    )
+    if df_extremos.empty:
+        return out
+    valid = timestamps.notna()
+    if not valid.any():
+        return out
+
+    ts_df = pd.DataFrame({'ts': pd.to_datetime(timestamps[valid]), 'idx': timestamps[valid].index})
+    ts_df = ts_df.sort_values('ts')
+    extremos = df_extremos.rename(columns={'data_hora': 'ext_time', 'altura_m': 'ext_alt'})
+
+    prev = pd.merge_asof(
+        ts_df,
+        extremos,
+        left_on='ts',
+        right_on='ext_time',
+        direction='backward'
+    ).rename(columns={'ext_time': 'prev_time', 'ext_alt': 'prev_alt'})
+
+    next_ = pd.merge_asof(
+        ts_df,
+        extremos,
+        left_on='ts',
+        right_on='ext_time',
+        direction='forward'
+    ).rename(columns={'ext_time': 'next_time', 'ext_alt': 'next_alt'})
+
+    joined = prev[['ts', 'idx', 'prev_time', 'prev_alt']].join(
+        next_[['next_time', 'next_alt']]
+    )
+
+    delta = (joined['next_time'] - joined['prev_time']).dt.total_seconds()
+    frac = (joined['ts'] - joined['prev_time']).dt.total_seconds() / delta
+    altura = joined['prev_alt'] + (joined['next_alt'] - joined['prev_alt']) * frac
+
+    invalid = delta.isna() | (delta == 0) | joined['prev_alt'].isna() | joined['next_alt'].isna()
+    altura[invalid] = joined.loc[invalid, 'prev_alt']
+
+    mare_subindo = (joined['next_alt'] > joined['prev_alt']).astype(int)
+    horas_ate = (joined['next_time'] - joined['ts']).dt.total_seconds() / 3600.0
+
+    res = pd.DataFrame(
+        index=joined['idx'],
+        data={
+            'mare_astronomica': altura.to_numpy(),
+            'mare_subindo': mare_subindo.to_numpy(),
+            'mare_horas_ate_extremo': horas_ate.to_numpy(),
+            'tem_mare_astronomica': (~invalid).astype(int).to_numpy(),
+        },
+    )
+    out.loc[res.index, :] = res
+    out = out.fillna(0.0)
+    out['mare_subindo'] = out['mare_subindo'].astype(int)
+    out['tem_mare_astronomica'] = out['tem_mare_astronomica'].astype(int)
+    return out
+
+
+def adicionar_features_mare(df):
+    """Adiciona features de maré astronômica por porto."""
+    df = df.copy()
+    df['mare_astronomica'] = 0.0
+    df['mare_subindo'] = 0
+    df['mare_horas_ate_extremo'] = 0.0
+    df['tem_mare_astronomica'] = 0
+
+    if not MARE_DIR.exists():
+        print("WARN. Pasta data/mare_clima nao encontrada; maré ignorada.")
+        return df
+
+    extremos_cache = {}
+    df['porto_norm'] = df['nome_porto'].apply(_normalizar_porto_base)
+    for porto_norm in df['porto_norm'].dropna().unique():
+        arquivo = MARE_PORT_FILE_BY_NORM.get(porto_norm)
+        if not arquivo:
+            continue
+        caminho = MARE_DIR / arquivo
+        if not caminho.exists():
+            continue
+        if arquivo not in extremos_cache:
+            extremos_cache[arquivo] = _carregar_extremos_mare(caminho)
+        extremos = extremos_cache[arquivo]
+        mask = df['porto_norm'] == porto_norm
+        feats = _interpolar_mare_para_timestamps(extremos, df.loc[mask, 'data_chegada_dt'])
+        df.loc[mask, ['mare_astronomica', 'mare_subindo', 'mare_horas_ate_extremo', 'tem_mare_astronomica']] = feats[
+            ['mare_astronomica', 'mare_subindo', 'mare_horas_ate_extremo', 'tem_mare_astronomica']
+        ].to_numpy()
+    df = df.drop(columns=['porto_norm'], errors='ignore')
+    return df
+
+
+def _agregar_clima_diario(df, ts_col, port_col, precip_col=None, wind_speed_col=None, wind_gust_col=None):
+    df = df.copy()
+    df[ts_col] = pd.to_datetime(df[ts_col], errors='coerce')
+    df = df.dropna(subset=[ts_col, port_col])
+    df['data'] = df[ts_col].dt.date
+    df['porto_norm'] = df[port_col].apply(_normalizar_porto_clima)
+
+    agg_map = {}
+    if precip_col and precip_col in df.columns:
+        agg_map['mc_precip_dia'] = (precip_col, 'sum')
+    if wind_speed_col and wind_speed_col in df.columns:
+        agg_map['mc_wind_speed_media'] = (wind_speed_col, 'mean')
+        agg_map['mc_wind_speed_max'] = (wind_speed_col, 'max')
+    if wind_gust_col and wind_gust_col in df.columns:
+        agg_map['mc_wind_gust_max'] = (wind_gust_col, 'max')
+
+    if not agg_map:
+        return pd.DataFrame(columns=['porto_norm', 'data'])
+
+    agg = df.groupby(['porto_norm', 'data']).agg(**agg_map).reset_index()
+    return agg
+
+
+def carregar_clima_mare_clima_diario():
+    """Carrega e agrega dados climáticos dos parquets mare_clima (diário)."""
+    frames_inmet = []
+
+    if MARE_CLIMA_DATASET_1.exists():
+        cols = ['timestamp', 'station', 'precip', 'wind_speed', 'wind_gust']
+        df1 = pd.read_parquet(MARE_CLIMA_DATASET_1, columns=cols)
+        frames_inmet.append(
+            _agregar_clima_diario(
+                df1, ts_col='timestamp', port_col='station',
+                precip_col='precip', wind_speed_col='wind_speed', wind_gust_col='wind_gust'
+            )
+        )
+
+    if MARE_CLIMA_DATASET_3.exists():
+        cols = ['timestamp', 'station', 'precip', 'wind_speed_10m']
+        df3 = pd.read_parquet(MARE_CLIMA_DATASET_3, columns=cols)
+        df3 = df3.rename(columns={'wind_speed_10m': 'wind_speed'})
+        frames_inmet.append(
+            _agregar_clima_diario(
+                df3, ts_col='timestamp', port_col='station',
+                precip_col='precip', wind_speed_col='wind_speed'
+            )
+        )
+
+    df_inmet = pd.concat(frames_inmet, ignore_index=True) if frames_inmet else pd.DataFrame()
+    if not df_inmet.empty:
+        df_inmet = (
+            df_inmet.groupby(['porto_norm', 'data'], as_index=False)
+            .agg({
+                'mc_precip_dia': 'sum',
+                'mc_wind_speed_media': 'mean',
+                'mc_wind_speed_max': 'max',
+                'mc_wind_gust_max': 'max',
+            })
+        )
+
+    df_era5 = pd.DataFrame()
+    if MARE_CLIMA_DATASET_2.exists():
+        cols = ['time', 'port', 'wind_speed_10m']
+        df2 = pd.read_parquet(MARE_CLIMA_DATASET_2, columns=cols)
+        df2 = df2.rename(columns={'wind_speed_10m': 'wind_speed'})
+        df_era5 = _agregar_clima_diario(
+            df2, ts_col='time', port_col='port', wind_speed_col='wind_speed'
+        )
+
+    if df_inmet.empty and df_era5.empty:
+        return pd.DataFrame()
+
+    if df_inmet.empty:
+        df_final = df_era5
+    elif df_era5.empty:
+        df_final = df_inmet
+    else:
+        df_final = df_inmet.merge(
+            df_era5,
+            on=['porto_norm', 'data'],
+            how='outer',
+            suffixes=('', '_era5')
+        )
+        for col in ['mc_wind_speed_media', 'mc_wind_speed_max']:
+            era5_col = f"{col}_era5"
+            if era5_col in df_final.columns:
+                df_final[col] = df_final[col].fillna(df_final[era5_col])
+        df_final = df_final.drop(columns=[c for c in df_final.columns if c.endswith('_era5')], errors='ignore')
+
+    if 'mc_wind_gust_max' not in df_final.columns:
+        df_final['mc_wind_gust_max'] = np.nan
+    if 'mc_wind_speed_max' in df_final.columns:
+        df_final['mc_wind_gust_max'] = df_final['mc_wind_gust_max'].fillna(df_final['mc_wind_speed_max'])
+
+    return df_final
+
+
+def integrar_clima_mare_clima(df):
+    """Integra clima dos arquivos mare_clima para complementar o INMET."""
+    df = df.copy()
+    clima_mc = carregar_clima_mare_clima_diario()
+    if clima_mc.empty:
+        return df
+
+    if 'data_chegada_date' not in df.columns:
+        df['data_chegada_date'] = pd.to_datetime(df['data_chegada'], dayfirst=True, errors='coerce').dt.date
+    df['porto_norm'] = df['nome_porto'].apply(_normalizar_porto_clima)
+
+    merged = df.merge(
+        clima_mc,
+        left_on=['porto_norm', 'data_chegada_date'],
+        right_on=['porto_norm', 'data'],
+        how='left'
+    )
+
+    if 'precipitacao_dia' in merged.columns:
+        merged['precipitacao_dia'] = merged['precipitacao_dia'].fillna(merged['mc_precip_dia'])
+    if 'vento_rajada_max_dia' in merged.columns:
+        merged['vento_rajada_max_dia'] = merged['vento_rajada_max_dia'].fillna(merged['mc_wind_gust_max'])
+    if 'vento_velocidade_media' in merged.columns:
+        merged['vento_velocidade_media'] = merged['vento_velocidade_media'].fillna(
+            merged['mc_wind_speed_media']
+        )
+
+    merged = merged.drop(columns=['porto_norm', 'data'], errors='ignore')
+    return merged
+
+
 def _load_port_mapping():
     if not PORT_MAPPING_PATH.exists():
         return {}
@@ -498,6 +800,8 @@ def criar_features_climaticas_avancadas(df):
     """Cria features derivadas do clima."""
     print("Criando features climaticas...")
     df['vento_rajada_max_dia'] = df['vento_rajada_max_dia'].fillna(5.0)
+    df['vento_velocidade_media'] = df.get('vento_velocidade_media', np.nan)
+    df['vento_velocidade_media'] = df['vento_velocidade_media'].fillna(3.0)
     df['precipitacao_dia'] = df['precipitacao_dia'].fillna(0.0)
     df['temp_media_dia'] = df['temp_media_dia'].fillna(25.0)
     df['temp_max_dia'] = df['temp_max_dia'].fillna(30.0)
@@ -648,12 +952,16 @@ def preparar_dados():
     df_pam = extrair_dados_producao_agricola()
     df_precos = extrair_precos_commodities()
     df = integrar_clima_com_atracacao(df_antaq, df_clima)
+    if USE_MARE_CLIMA:
+        df = integrar_clima_mare_clima(df)
     df = integrar_producao_agricola(df, df_pam)
     df = integrar_precos_commodities(df, df_precos)
     print("=" * 70)
     print("FEATURE ENGINEERING")
     print("=" * 70)
     df = calcular_target(df)
+    if PROFILE.upper() == "VEGETAL" and USE_MARE_FEATURES:
+        df = adicionar_features_mare(df)
     df = criar_features_temporais(df)
     df = criar_target_encoding_porto(df)
     df = criar_features_climaticas_avancadas(df)
@@ -670,7 +978,7 @@ def preparar_dados():
         'movimentacao_total_toneladas', 'mes', 'dia_semana',
         'navios_no_fundeio_na_chegada', 'navios_na_fila_7d', 'tempo_espera_ma5',
         'dia_do_ano', 'porto_tempo_medio_historico',
-        'temp_media_dia', 'precipitacao_dia', 'vento_rajada_max_dia',
+        'temp_media_dia', 'precipitacao_dia', 'vento_rajada_max_dia', 'vento_velocidade_media',
         'umidade_media_dia', 'amplitude_termica',
         'restricao_vento', 'restricao_chuva',
         'flag_celulose', 'flag_algodao', 'flag_soja', 'flag_milho',
@@ -682,6 +990,11 @@ def preparar_dados():
         'ais_eta_media_horas', 'ais_dist_media_km'
     ]
     if PROFILE.upper() == "VEGETAL":
+        if USE_MARE_FEATURES:
+            features.extend([
+                'mare_astronomica', 'mare_subindo', 'mare_horas_ate_extremo',
+                'tem_mare_astronomica'
+            ])
         features.append('chuva_acumulada_ultimos_3dias')
     target = 'tempo_espera_horas'
     df_final = df[features + [target, 'data_chegada_dt']].dropna()
@@ -974,6 +1287,9 @@ def treinar_modelo_xgboost(df, features, target, model_reg=None):
 
 
 def salvar_modelos(profile, features, target, model_reg, model_clf, model_xgb):
+    if not SAVE_MODELS:
+        print("SAVE_MODELS=0 -> pulando salvamento de modelos.")
+        return
     output_dir = Path("models")
     output_dir.mkdir(parents=True, exist_ok=True)
     artifacts = {
@@ -1005,6 +1321,7 @@ def main():
     print("=" * 70)
     print("MODELO DE PREVISAO DE TEMPO DE ESPERA PARA ATRACACAO")
     print("=" * 70)
+    print(f"FLAGS: USE_MARE_FEATURES={int(USE_MARE_FEATURES)} | USE_MARE_CLIMA={int(USE_MARE_CLIMA)} | SAVE_MODELS={int(SAVE_MODELS)}")
     if PROFILES_TO_RUN:
         for profile in PROFILES_TO_RUN:
             global PROFILE

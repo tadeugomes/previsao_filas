@@ -22,6 +22,20 @@ PREDICTED_DIR = Path("lineups_previstos")
 PREMIUM_REGISTRY_PATH = Path("premium_registry.json")
 AIS_FEATURES_DIR = Path("data/ais_features")
 PORT_MAPPING_PATH = Path("data/port_mapping.csv")
+MARE_DIR = Path("data/mare_clima")
+MARE_PORT_FILE_BY_NORM = {
+    "ANTONINA": "antonina_extremos_2020_2026.csv",
+    "BARCARENA": "barcarena_extremos_2020_2026.csv",
+    "ITAQUI": "itaqui_extremos_2020_2026.csv",
+    "PARANAGUA": "paranagua_extremos_2020_2026.csv",
+    "PECEM": "pecem_extremos_2020_2026.csv",
+    "RECIFE": "recife_extremos_2020_2026.csv",
+    "RIOGRANDE": "riograande_extremos_2020_2026.csv",
+    "SALVADOR": "salvador_extremos_2020_2026.csv",
+    "SANTOS": "santos_extremos_2020_2026.csv",
+    "SUAPE": "suape_extremos_2020_2026.csv",
+    "VILADOCONDE": "viladoconde_extremos_2020_2026.csv",
+}
 PORT_MUNICIPIO_UF = {
     "ITAQUI": {"municipio": "SAO LUIS", "uf": "MA"},
     "PONTA_DA_MADEIRA": {"municipio": "SAO LUIS", "uf": "MA"},
@@ -407,6 +421,116 @@ def normalizar_texto(valor):
     return re.sub(r"[^A-Z0-9]", "", texto)
 
 
+def _normalizar_porto_base(nome_porto):
+    norm = normalizar_texto(nome_porto)
+    for prefix in ("PORTODE", "PORTODO", "PORTO"):
+        if norm.startswith(prefix):
+            return norm[len(prefix):]
+    return norm
+
+
+@st.cache_data
+def _carregar_extremos_mare(caminho_csv):
+    df = pd.read_csv(caminho_csv)
+    if df.empty:
+        return df
+    df = df.rename(columns={"Data_Hora": "data_hora", "Altura_m": "altura_m"})
+    df["data_hora"] = pd.to_datetime(df["data_hora"], errors="coerce")
+    df["altura_m"] = pd.to_numeric(df["altura_m"], errors="coerce")
+    df = df.dropna(subset=["data_hora", "altura_m"]).sort_values("data_hora")
+    return df[["data_hora", "altura_m"]]
+
+
+def _interpolar_mare_para_timestamps(df_extremos, timestamps):
+    out = pd.DataFrame(
+        index=timestamps.index,
+        data={
+            "mare_astronomica": 0.0,
+            "mare_subindo": 0,
+            "mare_horas_ate_extremo": 0.0,
+            "tem_mare_astronomica": 0,
+        },
+    )
+    if df_extremos.empty:
+        return out
+    valid = timestamps.notna()
+    if not valid.any():
+        return out
+
+    ts_df = pd.DataFrame({"ts": pd.to_datetime(timestamps[valid]), "idx": timestamps[valid].index})
+    ts_df = ts_df.sort_values("ts")
+    extremos = df_extremos.rename(columns={"data_hora": "ext_time", "altura_m": "ext_alt"})
+
+    prev = pd.merge_asof(
+        ts_df,
+        extremos,
+        left_on="ts",
+        right_on="ext_time",
+        direction="backward",
+    ).rename(columns={"ext_time": "prev_time", "ext_alt": "prev_alt"})
+
+    next_ = pd.merge_asof(
+        ts_df,
+        extremos,
+        left_on="ts",
+        right_on="ext_time",
+        direction="forward",
+    ).rename(columns={"ext_time": "next_time", "ext_alt": "next_alt"})
+
+    joined = prev[["ts", "idx", "prev_time", "prev_alt"]].join(
+        next_[["next_time", "next_alt"]]
+    )
+
+    delta = (joined["next_time"] - joined["prev_time"]).dt.total_seconds()
+    frac = (joined["ts"] - joined["prev_time"]).dt.total_seconds() / delta
+    altura = joined["prev_alt"] + (joined["next_alt"] - joined["prev_alt"]) * frac
+
+    invalid = delta.isna() | (delta == 0) | joined["prev_alt"].isna() | joined["next_alt"].isna()
+    altura[invalid] = joined.loc[invalid, "prev_alt"]
+
+    mare_subindo = (joined["next_alt"] > joined["prev_alt"]).astype(int)
+    horas_ate = (joined["next_time"] - joined["ts"]).dt.total_seconds() / 3600.0
+
+    res = pd.DataFrame(
+        index=joined["idx"],
+        data={
+            "mare_astronomica": altura.to_numpy(),
+            "mare_subindo": mare_subindo.to_numpy(),
+            "mare_horas_ate_extremo": horas_ate.to_numpy(),
+            "tem_mare_astronomica": (~invalid).astype(int).to_numpy(),
+        },
+    )
+    out.loc[res.index, :] = res
+    out = out.fillna(0.0)
+    out["mare_subindo"] = out["mare_subindo"].astype(int)
+    out["tem_mare_astronomica"] = out["tem_mare_astronomica"].astype(int)
+    return out
+
+
+def adicionar_features_mare_lineup(df, porto_nome):
+    df = df.copy()
+    df["mare_astronomica"] = 0.0
+    df["mare_subindo"] = 0
+    df["mare_horas_ate_extremo"] = 0.0
+    df["tem_mare_astronomica"] = 0
+
+    if not MARE_DIR.exists():
+        return df
+    porto_norm = _normalizar_porto_base(porto_nome)
+    arquivo = MARE_PORT_FILE_BY_NORM.get(porto_norm)
+    if not arquivo:
+        return df
+    caminho = MARE_DIR / arquivo
+    if not caminho.exists():
+        return df
+    extremos = _carregar_extremos_mare(caminho)
+    feats = _interpolar_mare_para_timestamps(extremos, df["data_chegada_dt"])
+    df[["mare_astronomica", "mare_subindo", "mare_horas_ate_extremo", "tem_mare_astronomica"]] = feats[
+        ["mare_astronomica", "mare_subindo", "mare_horas_ate_extremo", "tem_mare_astronomica"]
+    ].to_numpy()
+    return df
+
+
 def normalize_column_name(valor):
     texto = unicodedata.normalize("NFKD", str(valor))
     texto = "".join(ch for ch in texto if not unicodedata.combining(ch))
@@ -476,6 +600,7 @@ def fetch_inmet_latest(station_id, project_id="antaqdados"):
         MIN(temperatura_min) AS temp_min_dia,
         SUM(precipitacao_total) AS precipitacao_dia,
         MAX(vento_rajada_max) AS vento_rajada_max_dia,
+        AVG(vento_velocidade) AS vento_velocidade_media,
         AVG(umidade_rel_hora) AS umidade_media_dia
     FROM `basedosdados.br_inmet_bdmep.microdados`
     WHERE id_estacao = '{station_id}'
@@ -573,6 +698,8 @@ def build_features_from_lineup(df_lineup, metadata, live_data, porto_nome):
                 if not df["data_chegada_dt"].isna().all():
                     break
     df["data_chegada_dt"] = df["data_chegada_dt"].fillna(pd.Timestamp.today().normalize())
+    if "mare_astronomica" in features:
+        df = adicionar_features_mare_lineup(df, porto_nome)
     df["mes"] = df["data_chegada_dt"].dt.month.fillna(1).astype(int)
     df["dia_do_ano"] = df["data_chegada_dt"].dt.dayofyear.fillna(1).astype(int)
     df["trimestre"] = df["data_chegada_dt"].dt.quarter.fillna(1).astype(int)
@@ -607,6 +734,7 @@ def build_features_from_lineup(df_lineup, metadata, live_data, porto_nome):
     df["temp_media_dia"] = float(clima.get("temp_media_dia", 25.0))
     df["precipitacao_dia"] = float(clima.get("precipitacao_dia", 0.0))
     df["vento_rajada_max_dia"] = float(clima.get("vento_rajada_max_dia", 5.0))
+    df["vento_velocidade_media"] = float(clima.get("vento_velocidade_media", 3.0))
     df["umidade_media_dia"] = float(clima.get("umidade_media_dia", 70.0))
     df["amplitude_termica"] = float(clima.get("amplitude_termica", 10.0))
     df["restricao_vento"] = 0
