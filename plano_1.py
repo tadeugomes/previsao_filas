@@ -31,7 +31,7 @@ PORT_MAPPING_PATH = Path("data/port_mapping.csv")
 MARE_DIR = Path("data/mare_clima")
 MARE_CLIMA_DATASET_1 = MARE_DIR / "portos_brasil_historico_portos_hibridos.parquet"
 MARE_CLIMA_DATASET_2 = MARE_DIR / "dados_historicos_complementares_portos_oceanicos_v2.parquet"
-MARE_CLIMA_DATASET_3 = MARE_DIR / "dados_historicos_portos_hibridos_arco_norte_v2.parquet"
+MARE_CLIMA_DATASET_3 = MARE_DIR / "dados_historicos_portos_hibridos_arco_norte_v4_real.parquet"
 MARE_PORT_FILE_BY_NORM = {
     "ANTONINA": "antonina_extremos_2020_2026.csv",
     "BARCARENA": "barcarena_extremos_2020_2026.csv",
@@ -364,10 +364,26 @@ def _normalizar_porto_base(nome_porto):
 
 
 def _normalizar_porto_clima(nome_porto):
-    """Normaliza nome de porto (remove prefixos e UF) para clima."""
+    """Normaliza nome de porto (remove prefixos e UF) para clima.
+
+    A remoção de UF só ocorre se o nome original continha parênteses
+    (ex: 'Santos (SP)') indicando que a UF foi adicionada explicitamente,
+    não quando faz parte do nome do porto (ex: 'Suape' não deve virar 'Sua').
+    """
+    if pd.isna(nome_porto):
+        return ""
+    original = str(nome_porto)
     norm = _normalizar_porto_base(nome_porto)
-    if len(norm) > 2 and norm[-2:] in UF_CODES:
-        norm = norm[:-2]
+    # Só remove UF se o nome original tinha parênteses (ex: "Santos (SP)")
+    # ou se tinha formato "NomeUF" colado (ex: "BarcarenaPA")
+    has_parentheses = '(' in original
+    has_uf_suffix = len(norm) > 4 and norm[-2:] in UF_CODES
+    # Para nomes curtos (<=6 chars normalizados), não remover UF pois pode ser parte do nome
+    if has_parentheses or (has_uf_suffix and len(norm) > 6):
+        candidate = norm[:-2]
+        # Verificar se a remoção não deixa um nome muito curto ou inválido
+        if len(candidate) >= 3:
+            norm = candidate
     return norm
 
 
@@ -554,13 +570,32 @@ def carregar_clima_mare_clima_diario():
         )
 
     df_era5 = pd.DataFrame()
+    df_ocean = pd.DataFrame()
     if MARE_CLIMA_DATASET_2.exists():
-        cols = ['time', 'port', 'wind_speed_10m']
-        df2 = pd.read_parquet(MARE_CLIMA_DATASET_2, columns=cols)
+        # Carregar vento para clima
+        cols_wind = ['time', 'port', 'wind_speed_10m']
+        df2 = pd.read_parquet(MARE_CLIMA_DATASET_2, columns=cols_wind)
         df2 = df2.rename(columns={'wind_speed_10m': 'wind_speed'})
         df_era5 = _agregar_clima_diario(
             df2, ts_col='time', port_col='port', wind_speed_col='wind_speed'
         )
+        # Carregar features oceanográficas (ondas, frente fria)
+        cols_ocean = ['time', 'port', 'wave_height', 'frente_fria', 'pressao_anomalia']
+        try:
+            df2_ocean = pd.read_parquet(MARE_CLIMA_DATASET_2, columns=cols_ocean)
+            df2_ocean['time'] = pd.to_datetime(df2_ocean['time'], errors='coerce')
+            df2_ocean = df2_ocean.dropna(subset=['time', 'port'])
+            df2_ocean['data'] = df2_ocean['time'].dt.date
+            df2_ocean['porto_norm'] = df2_ocean['port'].apply(_normalizar_porto_clima)
+            # Agregar por dia
+            df_ocean = df2_ocean.groupby(['porto_norm', 'data']).agg(
+                mc_wave_height_max=('wave_height', 'max'),
+                mc_wave_height_media=('wave_height', 'mean'),
+                mc_frente_fria=('frente_fria', 'max'),  # Se houve frente fria no dia
+                mc_pressao_anomalia=('pressao_anomalia', 'mean'),
+            ).reset_index()
+        except Exception:
+            df_ocean = pd.DataFrame()
 
     if df_inmet.empty and df_era5.empty:
         return pd.DataFrame()
@@ -586,6 +621,18 @@ def carregar_clima_mare_clima_diario():
         df_final['mc_wind_gust_max'] = np.nan
     if 'mc_wind_speed_max' in df_final.columns:
         df_final['mc_wind_gust_max'] = df_final['mc_wind_gust_max'].fillna(df_final['mc_wind_speed_max'])
+
+    # Integrar features oceanográficas (ondas, frente fria)
+    if not df_ocean.empty:
+        df_final = df_final.merge(
+            df_ocean,
+            on=['porto_norm', 'data'],
+            how='left'
+        )
+    # Garantir colunas oceanográficas existem
+    for col in ['mc_wave_height_max', 'mc_wave_height_media', 'mc_frente_fria', 'mc_pressao_anomalia']:
+        if col not in df_final.columns:
+            df_final[col] = np.nan
 
     return df_final
 
@@ -616,6 +663,15 @@ def integrar_clima_mare_clima(df):
         merged['vento_velocidade_media'] = merged['vento_velocidade_media'].fillna(
             merged['mc_wind_speed_media']
         )
+
+    # Criar features oceanográficas finais com valores default para portos sem dados
+    merged['wave_height_max'] = merged.get('mc_wave_height_max', pd.Series([np.nan] * len(merged))).fillna(0.0)
+    merged['wave_height_media'] = merged.get('mc_wave_height_media', pd.Series([np.nan] * len(merged))).fillna(0.0)
+    merged['frente_fria'] = merged.get('mc_frente_fria', pd.Series([False] * len(merged))).fillna(False).astype(int)
+    merged['pressao_anomalia'] = merged.get('mc_pressao_anomalia', pd.Series([np.nan] * len(merged))).fillna(0.0)
+
+    # Criar feature de ressaca (ondas > 2.5m)
+    merged['ressaca'] = (merged['wave_height_max'] > 2.5).astype(int)
 
     merged = merged.drop(columns=['porto_norm', 'data'], errors='ignore')
     return merged
@@ -987,7 +1043,9 @@ def preparar_dados():
         'preco_soja_mensal', 'preco_milho_mensal', 'preco_algodao_mensal',
         'indice_pressao_soja', 'indice_pressao_milho',
         'ais_navios_no_raio', 'ais_fila_ao_largo', 'ais_velocidade_media_kn',
-        'ais_eta_media_horas', 'ais_dist_media_km'
+        'ais_eta_media_horas', 'ais_dist_media_km',
+        # Features oceanográficas (ondas, frente fria)
+        'wave_height_max', 'wave_height_media', 'frente_fria', 'pressao_anomalia', 'ressaca',
     ]
     if PROFILE.upper() == "VEGETAL":
         if USE_MARE_FEATURES:
@@ -996,7 +1054,18 @@ def preparar_dados():
                 'tem_mare_astronomica'
             ])
         features.append('chuva_acumulada_ultimos_3dias')
+    # Garantir que colunas oceanográficas existem (mesmo se USE_MARE_CLIMA=False)
+    for col in ['wave_height_max', 'wave_height_media', 'frente_fria', 'pressao_anomalia', 'ressaca']:
+        if col not in df.columns:
+            df[col] = 0.0
+
     target = 'tempo_espera_horas'
+    # Filtrar features que existem no dataframe
+    available_features = [f for f in features if f in df.columns]
+    missing_features = set(features) - set(available_features)
+    if missing_features:
+        print(f"WARN. Features não disponíveis (removidas): {missing_features}")
+    features = available_features
     df_final = df[features + [target, 'data_chegada_dt']].dropna()
     print("=" * 70)
     print("RESUMO DO DATASET FINAL")
