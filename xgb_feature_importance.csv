@@ -1,130 +1,142 @@
 feature,gain
-tempo_espera_ma5,740646.75
-tipo_carga_Longo Curso Exportação,728851.125
-tipo_carga_Interior,226976.53125
-tipo_carga_Longo Curso Importação,138250.9375
-dia_do_ano,134814.09375
-nome_terminal_Terminal Portuário Graneleiro de Barcarena,130472.5703125
-nome_terminal_Terbian - Terminal Bianchini,126172.8203125
-nome_terminal_Píer Cargill,123899.265625
-periodo_safra,114125.0625
-nome_porto_Terminal Portuário Graneleiro de Barcarena,107061.6171875
-nome_porto_Santarém,104757.59375
-cdmercadoria_1201,104254.75
-nome_terminal_Cais Público,102951.890625
-cdmercadoria_1701,101507.8125
-mes,100952.2109375
-nome_porto_Maceió,100927.75
-porto_tempo_medio_historico,100631.96875
-nome_porto_Paranaguá,98216.40625
-nome_porto_Imbituba,96049.2734375
-tipo_navegacao_Interior,95893.25
-cdmercadoria_1107,95336.3984375
-nome_porto_Terbian - Terminal Bianchini,93650.734375
-nome_terminal_Cais do Outeirinhos - Público,90309.484375
-nome_terminal_Terminal Integrador Portuário Luiz Antonio Mesquita - TIPLAM,83224.359375
-nome_porto_Terminal Integrador Portuário Luiz Antonio Mesquita - TIPLAM,81264.703125
-nome_terminal_Cais do AA-12,80873.3203125
-cdmercadoria_2304,78949.96875
-navios_no_fundeio_na_chegada,74008.0390625
-nome_terminal_Terminal Ponta da Montanha,71446.2734375
-nome_terminal_Porto Ponta do Félix,71219.9609375
-nome_porto_Terminal Graneleiro Hermasa,70746.3515625
-producao_algodao,70677.28125
-indice_pressao_milho,70039.515625
-nome_terminal_ETC Miritituba,69511.046875
-tipo_navegacao_Longo Curso,68092.0390625
-nome_porto_Santos,67771.0703125
-producao_milho,66798.296875
-indice_pressao_soja,66416.296875
-nome_terminal_Píer da TGG (SSZ 14) - Privativo,62967.84375
-nome_terminal_Terminal Portuário Novo Remanso,62742.64453125
-nome_terminal_Terminal Marítimo Inácio Barbosa - TMIB,62566.44921875
-nome_porto_São Francisco do Sul,62190.82421875
-nome_porto_Cargill Agrícola,62113.7890625
-cdmercadoria_1005,61412.76171875
-nome_terminal_Terminal Portuário Bunge Alimentos,61267.125
-producao_soja,60635.859375
-nome_porto_Terminal de Tubarão,59694.3203125
-nome_porto_ETC Miritituba,59219.78125
-nome_terminal_Cargill Agrícola,59191.11328125
-nome_porto_Terminal Portuário Novo Remanso,57343.0625
-cdmercadoria_1001,57242.40234375
-nome_terminal_Cais Comercial,55221.62109375
-nome_porto_São Sebastião,55053.875
-nome_terminal_T-37 (cadastro antigo),54619.58203125
-nome_terminal_Retroarea 1,53703.2890625
-nome_terminal_Terminal de Tubarão,53048.953125
-nome_porto_Estação Cianport Miritituba,52932.2734375
-movimentacao_total_toneladas,52707.06640625
-nome_terminal_Corredor de Exportação Oeste,52270.1171875
-nome_porto_Itaqui,52112.453125
-nome_porto_Terminal Ponta da Montanha,51400.5546875
-nome_porto_Terminal Vila do Conde,50768.2265625
-nome_terminal_Píer da TEAG (SSZ 10) - Privativo,50583.90234375
-navios_na_fila_7d,49983.80859375
-umidade_media_dia,49884.9921875
-nome_terminal_Cais da Ponta da Praia - Público,48648.2890625
-nome_porto_Terminal Marítimo Inácio Barbosa - TMIB,48120.703125
-nome_terminal_Corredor de Exportação Leste,47912.5546875
-nome_porto_Ciagram Portos e Navegação da Amazônia,47020.484375
-vento_velocidade_media,46763.59765625
-nome_terminal_TESC,46729.4296875
-vento_rajada_max_dia,46437.38671875
-temp_media_dia,46163.44140625
-nome_porto_Terminal Portuário Cotegipe,45415.51953125
-tipo_navegacao_Apoio Portuário,44650.26953125
-nome_porto_Porto do Açu - Terminal TMULT e TCAR,44361.27734375
-amplitude_termica,43763.1640625
-chuva_acumulada_ultimos_3dias,42161.921875
-stsh4_Compartilhado,41979.02734375
-nome_porto_Antonina,41849.4140625
-nome_porto_Itahum Terminal,41423.6484375
-nome_terminal_Cais do Macuco - Público,41243.85546875
-nome_terminal_CAIS PÚBLICO,40601.3125
-nome_terminal_Terminal Graneleiro Hermasa,39720.0078125
-nome_porto_Terminal Marítimo Luiz Fogliatto - Termasa,39357.140625
-cdmercadoria_2302,39091.3046875
-nome_porto_Rio Grande,38736.8984375
-nome_terminal_Itahum Terminal,38113.27734375
-nome_porto_Belém,36987.0078125
-nome_terminal_Cais TERGRASA S.A,36677.5234375
-tipo_carga_Baldeação de Carga Nacional,36204.59765625
-tipo_navegacao_Cabotagem,36194.19921875
-nome_terminal_Cais comercial do Porto Novo,34894.63671875
-nome_porto_Estação EAG - Bertolini,34665.99609375
-nome_terminal_Cais do Paquetá - Público,34269.05859375
-precipitacao_dia,33551.5546875
-nome_porto_Fortaleza,33111.578125
-nome_porto_Santana,32441.859375
-nome_terminal_Terminal Vila do Conde,32305.2734375
-nome_porto_Rio de Janeiro,30877.125
-nome_terminal_Píer da TEG (SSZ 08) - Privativo,29686.728515625
-nome_terminal_Fundeio,28619.9453125
-cdmercadoria_1006,28078.76953125
-dia_semana,27371.658203125
-nome_porto_Cargill Agrícola S.A. (ETC Miritituba/PA),26986.84765625
-tipo_carga_Cabotagem,26445.546875
-nome_terminal_Terminal Marítimo Luiz Fogliatto - Termasa,25696.509765625
-nome_porto_Recife,25148.576171875
-nome_terminal_Ciagram Portos e Navegação da Amazônia,24253.91796875
-stsh4_Exclusivo,24116.310546875
-nome_terminal_R06 - RoRoff,22689.953125
-cdmercadoria_1003,22263.802734375
-nome_porto_Terminal Portuário Bunge Alimentos,22171.390625
-nome_terminal_Berços Públicos,21824.591796875
-nome_terminal_Terminal Portuário Cotegipe,21649.8515625
-nome_terminal_Cais Público Gamboa T2,19825.880859375
-nome_terminal_Piers Públicos TMU,19433.6484375
-nome_porto_TUP Enseada Naval,17994.751953125
-nome_terminal_Estação EAG - Bertolini,15241.8779296875
-nome_terminal_Corredor de Fertilizantes,12798.8095703125
-nome_terminal_Pier do AA-13 (dutos),12661.033203125
-nome_porto_Vila do Conde,12595.3671875
-nome_terminal_TUP Enseada Naval,12358.62109375
-nome_porto_Natal,11634.2265625
-nome_porto_Vitória,11581.7060546875
-nome_porto_Suape,10330.5234375
-nome_terminal_Retroarea 2,10174.3212890625
-tipo_carga_Operação Intermediária,7221.57568359375
-tipo_navegacao_Apoio Marítimo,6756.330078125
+tipo_carga_Longo Curso Exportação,1752366.625
+tempo_espera_ma5,804893.0625
+nome_porto_Paranaguá,433141.71875
+dia_do_ano,157556.609375
+porto_tempo_medio_historico,156259.90625
+nome_terminal_Píer Cargill,155205.828125
+tipo_carga_Longo Curso Importação,153887.515625
+tipo_carga_Interior,151809.6875
+periodo_safra,141557.125
+cdmercadoria_1701,134683.96875
+cdmercadoria_1201,118030.234375
+cdmercadoria_1107,117247.5
+nome_terminal_Cais Público,113031.765625
+nome_porto_Terminal Portuário Graneleiro de Barcarena,108223.2890625
+mes,107964.15625
+tem_mare_astronomica,106378.71875
+nome_terminal_Cais do Outeirinhos - Público,104504.046875
+nome_porto_Santos,100485.4453125
+nome_terminal_Terminal Portuário Graneleiro de Barcarena,100169.328125
+nome_porto_Terbian - Terminal Bianchini,100069.0234375
+nome_porto_Santarém,99965.0
+navios_no_fundeio_na_chegada,98911.8984375
+nome_porto_Maceió,96343.03125
+nome_porto_Imbituba,93823.7421875
+tipo_navegacao_Interior,92184.5859375
+indice_pressao_milho,91454.03125
+producao_algodao,88505.328125
+nome_terminal_Terbian - Terminal Bianchini,88178.171875
+cdmercadoria_2304,87594.0625
+nome_porto_Terminal Graneleiro Hermasa,81414.0
+nome_porto_Antonina,78954.84375
+cdmercadoria_1005,78750.1484375
+tipo_navegacao_Longo Curso,78368.1875
+nome_porto_São Francisco do Sul,78175.8515625
+preco_soja_mensal,76334.640625
+nome_porto_Terminal Integrador Portuário Luiz Antonio Mesquita - TIPLAM,74425.0625
+nome_porto_Itaqui,73929.734375
+nome_terminal_Cais do AA-12,73660.4296875
+producao_soja,73386.6640625
+producao_milho,72019.296875
+nome_terminal_T-37 (cadastro antigo),70599.6953125
+preco_milho_mensal,69544.765625
+nome_porto_Cargill Agrícola,66564.7578125
+nome_terminal_Cais Público - Outeiro,66153.9609375
+nome_terminal_Terminal Vila do Conde,64998.73828125
+nome_porto_Terminal Portuário Novo Remanso,63898.5703125
+indice_pressao_soja,63870.76953125
+nome_terminal_Terminal Marítimo Inácio Barbosa - TMIB,61385.17578125
+nome_terminal_Terminal Portuário Novo Remanso,61039.8359375
+nome_porto_Estação Cianport Miritituba,60965.1953125
+preco_algodao_mensal,60876.8046875
+nome_terminal_Terminal Ponta da Montanha,60353.25390625
+nome_terminal_Píer da TGG (SSZ 14) - Privativo,59047.48828125
+navios_na_fila_7d,58995.3828125
+nome_terminal_ETC Miritituba,58500.17578125
+nome_terminal_Píer da TEAG (SSZ 10) - Privativo,57729.98828125
+nome_porto_ETC Miritituba,57591.40625
+tipo_navegacao_Apoio Portuário,57499.69921875
+nome_terminal_Terminal de Tubarão,56728.1640625
+nome_porto_Terminal Marítimo Luiz Fogliatto - Termasa,56441.53125
+nome_terminal_Cargill Agrícola,55881.86328125
+nome_terminal_Corredor de Exportação Leste,55334.46484375
+restricao_vento,54659.95703125
+nome_porto_Terminal Portuário Cotegipe,53837.70703125
+umidade_media_dia,53150.00390625
+nome_terminal_Corredor de Exportação Oeste,52575.8359375
+nome_porto_São Sebastião,52202.55859375
+nome_terminal_Porto Ponta do Félix,51581.67578125
+nome_terminal_Terminal Graneleiro Hermasa,51195.6875
+nome_porto_Ciagram Portos e Navegação da Amazônia,48835.03125
+nome_porto_Terminal Ponta da Montanha,48726.14453125
+movimentacao_total_toneladas,48563.875
+cdmercadoria_1001,48471.6875
+stsh4_Compartilhado,48268.8828125
+vento_velocidade_media,48260.3671875
+nome_porto_Terminal Marítimo Inácio Barbosa - TMIB,48064.03515625
+nome_terminal_Ciagram Portos e Navegação da Amazônia,47072.40625
+amplitude_termica,46787.01953125
+chuva_acumulada_ultimos_3dias,45919.0
+nome_porto_Terminal Vila do Conde,45747.9921875
+nome_terminal_Retroarea 1,45589.4140625
+nome_porto_Terminal de Tubarão,45369.28515625
+vento_rajada_max_dia,44909.578125
+wave_height_media,44665.953125
+stsh4_Exclusivo,44545.05078125
+precipitacao_dia,44515.5703125
+nome_terminal_Terminal Integrador Portuário Luiz Antonio Mesquita - TIPLAM,44289.734375
+temp_media_dia,43803.48046875
+nome_terminal_Píer da TEG (SSZ 08) - Privativo,43410.8125
+pressao_anomalia,43129.109375
+mare_astronomica,43104.55859375
+nome_terminal_CAIS PÚBLICO,43009.76953125
+nome_terminal_TESC,42265.578125
+mare_horas_ate_extremo,42078.2578125
+nome_porto_Belém,42074.4609375
+nome_terminal_Cais da Ponta da Praia - Público,42069.65234375
+nome_porto_Itahum Terminal,41995.70703125
+nome_terminal_Cais do Paquetá - Público,40576.34765625
+nome_porto_Porto do Açu - Terminal TMULT e TCAR,40262.45703125
+frente_fria,40032.75
+nome_porto_Rio Grande,39728.53515625
+tipo_navegacao_Cabotagem,38806.55859375
+wave_height_max,37579.7265625
+cdmercadoria_1006,37289.68359375
+cdmercadoria_1003,37252.3828125
+mare_subindo,36476.28125
+nome_terminal_Porto do Açu - Terminal TMULT e TCAR,36203.515625
+cdmercadoria_2302,36061.5234375
+nome_porto_Estação EAG - Bertolini,36038.640625
+tipo_carga_Cabotagem,35543.62109375
+nome_terminal_Fundeio,35500.4296875
+nome_terminal_Estação Cianport Miritituba,34634.3046875
+nome_terminal_Cais Público Gamboa T2,33530.53125
+tipo_carga_Baldeação de Carga Nacional,32722.673828125
+nome_terminal_Berços Públicos,31715.060546875
+nome_terminal_Estação EAG - Bertolini,31596.19140625
+nome_porto_Fortaleza,31484.6875
+nome_porto_Ilhéus,28703.828125
+nome_terminal_Cais TERGRASA S.A,28648.7109375
+dia_semana,28490.380859375
+nome_porto_Rio de Janeiro,28399.76171875
+nome_terminal_Cais comercial do Porto Novo,27902.380859375
+nome_porto_Suape,27373.009765625
+nome_terminal_R06 - RoRoff,24688.51171875
+nome_terminal_Terminal Marítimo Luiz Fogliatto - Termasa,23156.32421875
+nome_terminal_Piers Públicos TMU,22327.078125
+nome_terminal_Retroarea 2,21553.953125
+nome_porto_Vila do Conde,21350.6796875
+nome_terminal_Corredor de Fertilizantes,21225.38671875
+nome_porto_Santana,19424.4921875
+nome_porto_Estação Cujubinzinho,19394.171875
+nome_terminal_Itahum Terminal,18607.689453125
+nome_porto_Recife,16692.765625
+nome_porto_Terminal Portuário Bunge Alimentos,15188.3779296875
+nome_terminal_Cais do Macuco - Público,15124.4501953125
+nome_porto_TUP Enseada Naval,14776.34765625
+nome_porto_Cabedelo,14729.1943359375
+nome_porto_Natal,14217.37890625
+nome_terminal_Terminal Portuário Cotegipe,12884.6015625
+nome_terminal_Cais Público (cadastro antigo),8969.0380859375
+tipo_navegacao_Apoio Marítimo,5372.412109375

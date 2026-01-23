@@ -135,28 +135,24 @@ O app adiciona ao line-up:
 - O line-up nao altera o treino; ele eh apenas input da inferencia.
 - Clima e producao sao obtidos ao vivo (INMET/IBGE/IPEA) por porto.
 - Se faltar ETA (`prev_chegada`), o app usa `ultima_atualizacao`/`extracted_at` como fallback.
-- O app usa o ensemble (LGBM + XGB) quando disponivel para previsao em producao.
+- O app usa o ensemble (LGBM + XGB) quando disponivel; caso contrario, usa o regressor LGBM.
+- No modo premium, a previsao usa o ensemble definido no metadata do terminal.
 - A mensagem de previsao em horas inclui MAE esperado quando o modelo fornece esse dado.
 
 ## Resultados do modelo (ultimo treino)
-Data/hora: 2026-01-22 10:27
-Perfis treinados: VEGETAL (baseline INMET; maré/clima mare_clima desativados)
-Nota: ablação mostrou que o baseline (INMET) superou as variações com maré/clima mare_clima neste treino.
-Resumo da ablacao (VEGETAL, Ensemble):
-- Baseline (INMET): MAE 36.78h, R2 0.627
-- INMET + clima mare_clima (sem mare): MAE 37.85h, R2 0.603
-- INMET + mare (sem clima mare_clima): MAE 37.83h, R2 0.604
-- Full (INMET + mare + clima mare_clima): MAE 37.59h, R2 0.608
+Data/hora: 2026-01-23
+Perfis treinados: VEGETAL (mare/mare_clima ativos; precos IPEA + ComexStat/BQ; extrapolacao ativada)
+Nota: algodao via ComexStat/BQ ate 2025-06; meses fora do intervalo foram extrapolados (interpolacao temporal + ffill/bfill).
 
 Registros por perfil (treino VEGETAL):
 - VEGETAL: 55,804
 
 VEGETAL
-- LightGBM (CV): MAE 46.60h +- 10.13, RMSE 75.43h +- 15.27, R2 0.308 +- 0.109
-- XGBoost (teste 6 meses): MAE 54.81h, RMSE 70.02h, R2 0.468
-- XGBoost agressivo (Top 15): MAE 43.41h, RMSE 68.17h, R2 0.496
-- Ensemble (LGBM + XGB): MAE 36.78h, RMSE 58.65h, R2 0.627
-- Classificador: AUC-ROC (macro) 0.793, acuracia 0.604
+- LightGBM (CV): MAE 46.09h +- 10.03, RMSE 74.28h +- 14.66, R2 0.326 +- 0.112
+- XGBoost (teste 6 meses): MAE 52.55h, RMSE 68.97h, R2 0.484
+- XGBoost agressivo (Top 15): MAE 42.84h, RMSE 66.05h, R2 0.527
+- Ensemble (LGBM + XGB): MAE 37.04h, RMSE 58.87h, R2 0.624
+- Classificador: AUC-ROC (macro) 0.793, acuracia 0.599
 
 MINERAL (treino anterior 2026-01-18)
 - LightGBM (CV): MAE 50.61h +- 9.52, RMSE 79.35h +- 6.64, R2 0.164 +- 0.252

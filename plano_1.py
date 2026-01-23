@@ -62,6 +62,7 @@ def _env_flag(name, default=True):
 USE_MARE_FEATURES = _env_flag("USE_MARE_FEATURES", True)
 USE_MARE_CLIMA = _env_flag("USE_MARE_CLIMA", True)
 SAVE_MODELS = _env_flag("SAVE_MODELS", True)
+EXTRAPOLATE_MISSING_PRICES = _env_flag("EXTRAPOLATE_MISSING_PRICES", True)
 
 
 class EnsembleRegressor:
@@ -293,20 +294,23 @@ def extrair_precos_commodities():
 
     # Fallback: tentar IPEA diretamente
     commodities = [
-        ('PRECOS12_PSOIM12', 'Soja'),
-        ('PRECOS12_PMIM12', 'Milho'),
-        ('PRECOS12_PALG12', 'Algodao')
+        ('IFS12_SOJAGP12', 'Soja'),
+        ('IFS12_MAIZE12', 'Milho'),
+        (None, 'Algodao')
     ]
     df_precos_list = []
     for codigo, nome in commodities:
+        if not codigo:
+            print(f"    WARN. {nome}: serie nao configurada; usando fallback")
+            continue
         try:
-            url = f"http://www.ipeadata.gov.br/api/odata4/ValoresSerie(SERCODIGO='{codigo}')"
+            url = f"https://www.ipeadata.gov.br/api/odata4/Metadados('{codigo}')/Valores"
             response = requests.get(url, timeout=30)
             if response.status_code == 200:
                 data = response.json()
                 if 'value' in data and len(data['value']) > 0:
                     df = pd.DataFrame(data['value'])
-                    df['data'] = pd.to_datetime(df['VALDATA'])
+                    df['data'] = pd.to_datetime(df['VALDATA'], errors='coerce', utc=True).dt.tz_convert(None)
                     df['preco'] = pd.to_numeric(df['VALVALOR'], errors='coerce')
                     df['produto'] = nome
                     df = df[['data', 'preco', 'produto']].dropna()
@@ -844,28 +848,66 @@ def integrar_producao_agricola(df, df_pam):
 def integrar_precos_commodities(df, df_precos):
     """Adiciona precos mensais de commodities."""
     print("Integrando precos de commodities...")
-    if df_precos is None:
-        df['preco_soja_mensal'] = 100.0
-        df['preco_milho_mensal'] = 50.0
-        df['preco_algodao_mensal'] = 300.0
-        print("    WARN. Usando valores fallback")
-        return df
-    df['ano_mes'] = pd.to_datetime(df['data_chegada']).dt.to_period('M')
+    if df_precos is None or df_precos.empty:
+        raise ValueError("Precos de commodities indisponiveis (sem fallback).")
+    df['ano_mes'] = pd.to_datetime(df['data_chegada'], dayfirst=True, errors='coerce').dt.to_period('M')
     df_precos['ano_mes'] = pd.to_datetime(df_precos['data']).dt.to_period('M')
     df_precos_pivot = df_precos.pivot_table(
         index='ano_mes',
         columns='produto',
         values='preco',
         aggfunc='mean'
-    ).reset_index()
-    df_precos_pivot.columns = [
-        'ano_mes', 'preco_algodao_mensal',
-        'preco_milho_mensal', 'preco_soja_mensal'
-    ]
-    df = df.merge(df_precos_pivot, on='ano_mes', how='left')
-    df['preco_soja_mensal'] = df['preco_soja_mensal'].ffill().fillna(100.0)
-    df['preco_milho_mensal'] = df['preco_milho_mensal'].ffill().fillna(50.0)
-    df['preco_algodao_mensal'] = df['preco_algodao_mensal'].ffill().fillna(300.0)
+    )
+    df_precos_pivot = df_precos_pivot.rename(columns={
+        'Algodao': 'preco_algodao_mensal',
+        'Milho': 'preco_milho_mensal',
+        'Soja': 'preco_soja_mensal',
+    }).reset_index()
+    for col in ('preco_soja_mensal', 'preco_milho_mensal', 'preco_algodao_mensal'):
+        if col not in df_precos_pivot.columns:
+            df_precos_pivot[col] = np.nan
+    if EXTRAPOLATE_MISSING_PRICES:
+        df_precos_pivot = df_precos_pivot.set_index('ano_mes').sort_index()
+        min_period = df_precos_pivot.index.min()
+        max_period = max(df_precos_pivot.index.max(), df['ano_mes'].max())
+        full_idx = pd.period_range(min_period, max_period, freq='M')
+        df_precos_pivot = df_precos_pivot.reindex(full_idx)
+        df_precos_pivot.index = df_precos_pivot.index.to_timestamp()
+        for col in ('preco_soja_mensal', 'preco_milho_mensal', 'preco_algodao_mensal'):
+            if df_precos_pivot[col].notna().any():
+                df_precos_pivot[col] = (
+                    df_precos_pivot[col]
+                    .interpolate(method='time')
+                    .ffill()
+                    .bfill()
+                )
+            else:
+                raise ValueError(f"Serie de preco ausente para {col}.")
+        df_precos_pivot.index = df_precos_pivot.index.to_period('M')
+        df_precos_pivot = df_precos_pivot.reset_index().rename(columns={'index': 'ano_mes'})
+        df = df.merge(df_precos_pivot, on='ano_mes', how='left')
+    else:
+        df = df.merge(df_precos_pivot, on='ano_mes', how='left')
+        last_dates = df_precos.groupby('produto')['data'].max().to_dict()
+        produto_col = {
+            'Soja': 'preco_soja_mensal',
+            'Milho': 'preco_milho_mensal',
+            'Algodao': 'preco_algodao_mensal',
+        }
+        for produto, col in produto_col.items():
+            last_date = last_dates.get(produto)
+            if pd.isna(last_date):
+                raise ValueError(f"Serie de preco ausente para {produto}.")
+            last_period = pd.to_datetime(last_date).to_period('M')
+            mask_tail = df['ano_mes'] > last_period
+            col_ffill = df[col].ffill()
+            df.loc[mask_tail, col] = col_ffill[mask_tail]
+            missing_mask = (df['ano_mes'] <= last_period) & df[col].isna()
+            if missing_mask.any():
+                print(
+                    f"    WARN. Precos faltantes para {produto} ate {last_period}; "
+                    "linhas serao descartadas no treino."
+                )
     print("    OK. Precos integrados")
     return df
 
