@@ -9,8 +9,21 @@ import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
-from google.cloud import bigquery
 import joblib
+
+# Importar API de clima (Open-Meteo) como fallback
+try:
+    from weather_api import get_weather_for_port, get_weather_forecast, fetch_weather_fallback
+    WEATHER_API_AVAILABLE = True
+except ImportError:
+    WEATHER_API_AVAILABLE = False
+
+# BigQuery é opcional (pode usar Open-Meteo como alternativa)
+try:
+    from google.cloud import bigquery
+    BIGQUERY_AVAILABLE = True
+except ImportError:
+    BIGQUERY_AVAILABLE = False
 
 APP_TITLE = "Previsao de Fila - Vegetal (MVP)"
 LINEUP_DIR = Path("lineups")
@@ -588,35 +601,63 @@ def fetch_inmet_station_id(municipio="SAO LUIS", project_id="antaqdados"):
 
 
 @st.cache_data(ttl=21600)
-def fetch_inmet_latest(station_id, project_id="antaqdados"):
-    if not station_id:
-        return None
-    client = bigquery.Client(project=project_id)
-    query = f"""
-    SELECT
-        data,
-        AVG(temperatura_bulbo_hora) AS temp_media_dia,
-        MAX(temperatura_max) AS temp_max_dia,
-        MIN(temperatura_min) AS temp_min_dia,
-        SUM(precipitacao_total) AS precipitacao_dia,
-        MAX(vento_rajada_max) AS vento_rajada_max_dia,
-        AVG(vento_velocidade) AS vento_velocidade_media,
-        AVG(umidade_rel_hora) AS umidade_media_dia
-    FROM `basedosdados.br_inmet_bdmep.microdados`
-    WHERE id_estacao = '{station_id}'
-    GROUP BY data
-    ORDER BY data DESC
-    LIMIT 7
-    """
-    df = client.query(query).to_dataframe()
-    if df.empty:
-        return None
-    df = df.sort_values("data").reset_index(drop=True)
-    latest = df.iloc[-1].to_dict()
-    chuva_3d = df["precipitacao_dia"].tail(3).sum()
-    latest["chuva_acumulada_ultimos_3dias"] = float(chuva_3d)
-    latest["amplitude_termica"] = float(latest["temp_max_dia"] - latest["temp_min_dia"])
-    return latest
+def fetch_inmet_latest(station_id, project_id="antaqdados", port_name=None):
+    """Busca dados climáticos do INMET via BigQuery, com fallback para Open-Meteo."""
+    # Tentar BigQuery primeiro (se disponível)
+    if BIGQUERY_AVAILABLE and station_id:
+        try:
+            client = bigquery.Client(project=project_id)
+            query = f"""
+            SELECT
+                data,
+                AVG(temperatura_bulbo_hora) AS temp_media_dia,
+                MAX(temperatura_max) AS temp_max_dia,
+                MIN(temperatura_min) AS temp_min_dia,
+                SUM(precipitacao_total) AS precipitacao_dia,
+                MAX(vento_rajada_max) AS vento_rajada_max_dia,
+                AVG(vento_velocidade) AS vento_velocidade_media,
+                AVG(umidade_rel_hora) AS umidade_media_dia
+            FROM `basedosdados.br_inmet_bdmep.microdados`
+            WHERE id_estacao = '{station_id}'
+            GROUP BY data
+            ORDER BY data DESC
+            LIMIT 7
+            """
+            df = client.query(query).to_dataframe()
+            if not df.empty:
+                df = df.sort_values("data").reset_index(drop=True)
+                latest = df.iloc[-1].to_dict()
+                chuva_3d = df["precipitacao_dia"].tail(3).sum()
+                latest["chuva_acumulada_ultimos_3dias"] = float(chuva_3d)
+                latest["amplitude_termica"] = float(latest["temp_max_dia"] - latest["temp_min_dia"])
+                latest["fonte"] = "INMET/BigQuery"
+                return latest
+        except Exception:
+            pass  # Fallback para Open-Meteo
+
+    # Fallback: usar Open-Meteo API (gratuita, sem API key)
+    if WEATHER_API_AVAILABLE and port_name:
+        try:
+            data = fetch_weather_fallback(port_name)
+            if data:
+                data["fonte"] = "Open-Meteo"
+                return data
+        except Exception:
+            pass
+
+    # Valores padrão se nenhuma fonte disponível
+    return {
+        "temp_media_dia": 25.0,
+        "temp_max_dia": 30.0,
+        "temp_min_dia": 20.0,
+        "precipitacao_dia": 0.0,
+        "vento_rajada_max_dia": 5.0,
+        "vento_velocidade_media": 3.0,
+        "umidade_media_dia": 70.0,
+        "amplitude_termica": 10.0,
+        "chuva_acumulada_ultimos_3dias": 0.0,
+        "fonte": "default",
+    }
 
 
 @st.cache_data(ttl=21600)
@@ -1250,7 +1291,7 @@ with st.sidebar:
             porto_cfg = PORT_MUNICIPIO_UF.get(porto_key, {})
             municipio = porto_cfg.get("municipio", porto_selecionado)
             station_id = fetch_inmet_station_id(municipio=municipio)
-            clima = fetch_inmet_latest(station_id) or {}
+            clima = fetch_inmet_latest(station_id, port_name=porto_key) or {}
             default_chuva = float(clima.get("chuva_acumulada_ultimos_3dias", 0.0))
         except Exception:
             default_chuva = 0.0
@@ -1261,6 +1302,36 @@ with st.sidebar:
         value=default_chuva,
         disabled=not editar_clima,
     )
+
+    # Previsão de 7 dias (usando Open-Meteo)
+    if WEATHER_API_AVAILABLE and porto_selecionado != "NACIONAL":
+        with st.expander("📅 Previsão 7 dias (clima e ondas)", expanded=False):
+            try:
+                forecast = get_weather_forecast(porto_selecionado, days=7)
+                if forecast:
+                    forecast_df = pd.DataFrame(forecast)
+                    forecast_df["data"] = pd.to_datetime(forecast_df["data"]).dt.strftime("%d/%m")
+                    cols_display = {
+                        "data": "Data",
+                        "temp_min": "Min °C",
+                        "temp_max": "Max °C",
+                        "precipitacao": "Chuva mm",
+                        "rajada_max": "Rajada m/s",
+                        "wave_height_max": "Ondas m",
+                    }
+                    display_cols = [c for c in cols_display.keys() if c in forecast_df.columns]
+                    df_show = forecast_df[display_cols].rename(columns=cols_display)
+                    st.dataframe(df_show, use_container_width=True, hide_index=True)
+                    # Alertas
+                    for _, row in forecast_df.iterrows():
+                        if row.get("ressaca"):
+                            st.warning(f"⚠️ {row['data']}: Possível ressaca (ondas > 2.5m)")
+                        if row.get("precipitacao", 0) > 20:
+                            st.info(f"🌧️ {row['data']}: Chuva intensa prevista ({row['precipitacao']:.0f}mm)")
+                else:
+                    st.caption("Previsão não disponível para este porto")
+            except Exception as e:
+                st.caption(f"Erro ao carregar previsão: {e}")
 
     st.markdown("### Condicoes Operacionais")
     default_fila = compute_default_fila(df_lineup, lineup_path)
@@ -1416,11 +1487,17 @@ def compute_results():
             municipio = porto_cfg.get("municipio", porto_selecionado)
             uf = porto_cfg.get("uf", "MA")
             station_id = fetch_inmet_station_id(municipio=municipio)
-            live_data["clima"] = fetch_inmet_latest(station_id)
+            live_data["clima"] = fetch_inmet_latest(station_id, port_name=porto_key)
             live_data["pam"] = fetch_pam_latest(uf=uf)
             live_data["precos"] = fetch_ipea_latest()
         except Exception:
-            live_data = {"clima": None, "pam": None, "precos": None}
+            # Fallback para Open-Meteo se BigQuery falhar
+            if WEATHER_API_AVAILABLE:
+                live_data["clima"] = fetch_weather_fallback(porto_key) if porto_key else None
+            else:
+                live_data["clima"] = None
+            live_data["pam"] = None
+            live_data["precos"] = None
         port_mapping = load_port_mapping()
         ais_df = load_latest_ais_features()
         if ais_df is not None:
