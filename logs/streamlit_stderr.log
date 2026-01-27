@@ -1,0 +1,81 @@
+2026-01-27 08:41:23.741 Uncaught app execution
+Traceback (most recent call last):
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\.venv\Lib\site-packages\streamlit\runtime\scriptrunner\exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\.venv\Lib\site-packages\streamlit\runtime\scriptrunner\script_runner.py", line 672, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\streamlit_app.py", line 1549, in <module>
+    perfil_porto = infer_port_profile(df_lineup, porto_selecionado)
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\streamlit_app.py", line 554, in infer_port_profile
+    profiles = df_lineup.apply(get_profile_from_row, axis=1)
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\.venv\Lib\site-packages\pandas\core\frame.py", line 10401, in apply
+    return op.apply().__finalize__(self, method="apply")
+           ~~~~~~~~^^
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\.venv\Lib\site-packages\pandas\core\apply.py", line 916, in apply
+    return self.apply_standard()
+           ~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\.venv\Lib\site-packages\pandas\core\apply.py", line 1063, in apply_standard
+    results, res_index = self.apply_series_generator()
+                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\.venv\Lib\site-packages\pandas\core\apply.py", line 1081, in apply_series_generator
+    results[i] = self.func(v, *self.args, **self.kwargs)
+                 ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\streamlit_app.py", line 534, in get_profile_from_row
+    return infer_profile(row.get(key))
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\streamlit_app.py", line 504, in infer_profile
+    if pd.isna(mercadoria):
+       ~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\.venv\Lib\site-packages\pandas\core\generic.py", line 1580, in __nonzero__
+    raise ValueError(
+    ...<2 lines>...
+    )
+ValueError: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2026-01-27 08:41:29.538 Uncaught app execution
+Traceback (most recent call last):
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\.venv\Lib\site-packages\streamlit\runtime\scriptrunner\exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\.venv\Lib\site-packages\streamlit\runtime\scriptrunner\script_runner.py", line 672, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\streamlit_app.py", line 1549, in <module>
+    perfil_porto = infer_port_profile(df_lineup, porto_selecionado)
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\streamlit_app.py", line 554, in infer_port_profile
+    profiles = df_lineup.apply(get_profile_from_row, axis=1)
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\.venv\Lib\site-packages\pandas\core\frame.py", line 10401, in apply
+    return op.apply().__finalize__(self, method="apply")
+           ~~~~~~~~^^
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\.venv\Lib\site-packages\pandas\core\apply.py", line 916, in apply
+    return self.apply_standard()
+           ~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\.venv\Lib\site-packages\pandas\core\apply.py", line 1063, in apply_standard
+    results, res_index = self.apply_series_generator()
+                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\.venv\Lib\site-packages\pandas\core\apply.py", line 1081, in apply_series_generator
+    results[i] = self.func(v, *self.args, **self.kwargs)
+                 ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\streamlit_app.py", line 534, in get_profile_from_row
+    return infer_profile(row.get(key))
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\streamlit_app.py", line 504, in infer_profile
+    if pd.isna(mercadoria):
+       ~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\tadeu\OneDrive\Documentos\GitHub\previsao_filas\.venv\Lib\site-packages\pandas\core\generic.py", line 1580, in __nonzero__
+    raise ValueError(
+    ...<2 lines>...
+    )
+ValueError: The truth value of a Series is ambiguous. Use a.empty, a.bool(), a.item(), a.any() or a.all().
+2026-01-27 08:46:42.491 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-01-27 08:47:20.793 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-01-27 08:52:58.440 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
