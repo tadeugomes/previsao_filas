@@ -4,6 +4,9 @@ import re
 import unicodedata
 from datetime import datetime
 from pathlib import Path
+from dataclasses import dataclass
+from enum import Enum
+from typing import Dict, List
 
 import numpy as np
 import pandas as pd
@@ -1137,6 +1140,172 @@ def calcular_tempo_espera_ma5(df_lineup, porto_nome):
     return np.full(len(df_lineup), tempo_medio)
 
 
+# ============================================================================
+# FASE 2 - SISTEMA DE VALIDAÇÃO E RASTREAMENTO DE QUALIDADE
+# ============================================================================
+
+class FeatureQuality(Enum):
+    """Qualidade da feature preenchida"""
+    REAL = "real"                      # Dado real do lineup
+    API_OK = "api_ok"                  # Obtido de API com sucesso
+    API_FALLBACK = "api_fallback"      # API falhou, usando fallback
+    CALCULATED = "calculated"           # Calculado corretamente
+    DEFAULT = "default"                 # Valor default razoável
+    CRITICAL_DEFAULT = "critical_default"  # Valor default em feature crítica
+
+
+@dataclass
+class FeatureReport:
+    """Relatório de qualidade das features para uma previsão"""
+    total_features: int
+    quality_breakdown: Dict[FeatureQuality, int]
+    critical_issues: List[str]
+    warnings: List[str]
+    confidence_score: float  # 0-100
+
+    def to_dict(self):
+        return {
+            "total_features": self.total_features,
+            "quality": {k.value: v for k, v in self.quality_breakdown.items()},
+            "critical_issues": self.critical_issues,
+            "warnings": self.warnings,
+            "confidence": self.confidence_score
+        }
+
+
+def avaliar_qualidade_features(metadata, api_status):
+    """
+    Avalia a qualidade das features preenchidas.
+
+    Args:
+        metadata: Metadados do modelo (dict com chave "features")
+        api_status: Dict com status de cada API/fonte de dados
+            {
+                "clima_ok": bool,
+                "ais_ok": bool,
+                "mare_ok": bool,
+                "economia_ok": bool,
+                "historico_ok": bool,
+            }
+
+    Returns:
+        FeatureReport com análise de qualidade
+    """
+    features = metadata.get("features", [])
+    quality_breakdown = {q: 0 for q in FeatureQuality}
+    critical_issues = []
+    warnings = []
+
+    # Features do lineup (Categoria A - dados reais)
+    lineup_features = [
+        "nome_porto", "nome_terminal", "natureza_carga",
+        "movimentacao_total_toneladas", "mes", "dia_semana", "dia_do_ano",
+        "trimestre"
+    ]
+    for feat in lineup_features:
+        if feat in features:
+            quality_breakdown[FeatureQuality.REAL] += 1
+
+    # Features de clima (Categoria D)
+    clima_features = [
+        "temp_media_dia", "precipitacao_dia", "vento_rajada_max_dia",
+        "vento_velocidade_media", "umidade_media_dia", "amplitude_termica",
+        "chuva_acumulada_ultimos_3dias", "wave_height_max", "wave_height_media",
+        "frente_fria", "pressao_anomalia", "ressaca"
+    ]
+    clima_count = len([f for f in clima_features if f in features])
+    if api_status.get("clima_ok", False):
+        quality_breakdown[FeatureQuality.API_OK] += clima_count
+    else:
+        quality_breakdown[FeatureQuality.API_FALLBACK] += clima_count
+        warnings.append("⚠️ Dados de clima não disponíveis - usando valores conservadores")
+
+    # Features AIS (Categoria E - CRÍTICA)
+    ais_features = [
+        "ais_navios_no_raio", "ais_fila_ao_largo", "ais_velocidade_media_kn",
+        "ais_eta_media_horas", "ais_dist_media_km"
+    ]
+    ais_count = len([f for f in ais_features if f in features])
+    if ais_count > 0:
+        if api_status.get("ais_ok", False):
+            quality_breakdown[FeatureQuality.API_OK] += ais_count
+        else:
+            quality_breakdown[FeatureQuality.CRITICAL_DEFAULT] += ais_count
+            critical_issues.append("🔴 Dados AIS não disponíveis - fila real desconhecida (impacto ALTO)")
+
+    # Features de maré (Categoria F)
+    mare_features = [
+        "mare_astronomica", "mare_subindo", "mare_horas_ate_extremo",
+        "tem_mare_astronomica"
+    ]
+    mare_count = len([f for f in mare_features if f in features])
+    if mare_count > 0:
+        if api_status.get("mare_ok", False):
+            quality_breakdown[FeatureQuality.API_OK] += mare_count
+        else:
+            quality_breakdown[FeatureQuality.DEFAULT] += mare_count
+            warnings.append("⚠️ Dados de maré não disponíveis - usando valores default")
+
+    # Features de fila calculadas (Categoria H - CORRIGIDAS NA FASE 1)
+    fila_features = ["navios_no_fundeio_na_chegada", "navios_na_fila_7d"]
+    quality_breakdown[FeatureQuality.CALCULATED] += len([f for f in fila_features if f in features])
+
+    # Features históricas (Categoria I - CORRIGIDAS NA FASE 1)
+    if "porto_tempo_medio_historico" in features:
+        if api_status.get("historico_ok", False):
+            quality_breakdown[FeatureQuality.CALCULATED] += 1
+        else:
+            quality_breakdown[FeatureQuality.DEFAULT] += 1
+            # Não é warning, pois temos valores default bons por porto
+
+    if "tempo_espera_ma5" in features:
+        quality_breakdown[FeatureQuality.CALCULATED] += 1
+
+    # Features econômicas (Categoria G)
+    econ_features = [
+        "producao_soja", "producao_milho", "producao_algodao",
+        "preco_soja_mensal", "preco_milho_mensal", "preco_algodao_mensal"
+    ]
+    econ_count = len([f for f in econ_features if f in features])
+    if econ_count > 0:
+        if api_status.get("economia_ok", False):
+            quality_breakdown[FeatureQuality.API_OK] += econ_count
+        else:
+            quality_breakdown[FeatureQuality.DEFAULT] += econ_count
+            warnings.append("⚠️ Dados econômicos não disponíveis - usando valores default")
+
+    # Defaults razoáveis (Categoria B)
+    default_features = [
+        "tipo_navegacao", "tipo_carga", "cdmercadoria", "stsh4",
+        "restricao_vento", "restricao_chuva", "flag_celulose", "flag_algodao",
+        "flag_soja", "flag_milho", "periodo_safra",
+        "indice_pressao_soja", "indice_pressao_milho"
+    ]
+    quality_breakdown[FeatureQuality.DEFAULT] += len([f for f in default_features if f in features])
+
+    # Calcula score de confiança baseado nos pesos
+    total = len(features)
+    if total == 0:
+        return FeatureReport(0, quality_breakdown, critical_issues, warnings, 0.0)
+
+    score = (
+        quality_breakdown[FeatureQuality.REAL] * 1.0 +
+        quality_breakdown[FeatureQuality.API_OK] * 0.9 +
+        quality_breakdown[FeatureQuality.CALCULATED] * 0.8 +
+        quality_breakdown[FeatureQuality.DEFAULT] * 0.5 +
+        quality_breakdown[FeatureQuality.API_FALLBACK] * 0.4 +
+        quality_breakdown[FeatureQuality.CRITICAL_DEFAULT] * 0.2
+    ) / total * 100
+
+    return FeatureReport(
+        total_features=total,
+        quality_breakdown=quality_breakdown,
+        critical_issues=critical_issues,
+        warnings=warnings,
+        confidence_score=round(score, 1)
+    )
+
+
 def build_features_from_lineup(df_lineup, metadata, live_data, porto_nome):
     features = metadata["features"]
     df = df_lineup.copy()
@@ -1359,10 +1528,35 @@ PREMIUM_BUILDERS = {
 }
 
 
-def predict_lineup_basico(df_lineup, live_data, porto_nome):
+def predict_lineup_basico(df_lineup, live_data, porto_nome, track_quality=False):
+    """
+    Faz previsões básicas para o lineup.
+
+    Args:
+        df_lineup: DataFrame com lineup
+        live_data: Dict com dados de contexto (clima, AIS, etc)
+        porto_nome: Nome do porto
+        track_quality: Se True, retorna também relatórios de qualidade (Fase 2)
+
+    Returns:
+        Se track_quality=False: df_out (DataFrame com previsões)
+        Se track_quality=True: (df_out, feature_reports, api_status)
+    """
     df = df_lineup.copy()
     df["perfil_modelo"] = df.apply(get_profile_from_row, axis=1)
+
+    # FASE 2: Rastreia status das APIs para qualidade
+    api_status = {
+        "clima_ok": live_data.get("clima") is not None or live_data.get("forecast") is not None,
+        "ais_ok": live_data.get("ais_df") is not None and not live_data.get("ais_df", pd.DataFrame()).empty,
+        "mare_ok": True,  # Mare está sempre disponível via arquivos locais
+        "economia_ok": live_data.get("pam") is not None and live_data.get("precos") is not None,
+        "historico_ok": False,  # Será atualizado por carregar_tempo_medio_historico()
+    }
+
     dfs = []
+    feature_reports = []
+
     for profile, sub in df.groupby("perfil_modelo", dropna=False):
         models = load_models_for_profile(profile)
         if not models:
@@ -1371,9 +1565,16 @@ def predict_lineup_basico(df_lineup, live_data, porto_nome):
             sub["classe_espera_prevista"] = "Indisponivel"
             sub["risco_previsto"] = "Indisponivel"
             sub["probabilidade_prevista"] = np.nan
+            sub["confianca_previsao"] = 0.0
             dfs.append(sub)
             continue
+
         features_data = build_features_from_lineup(sub, models["metadata"], live_data, porto_nome)
+
+        # FASE 2: Avalia qualidade das features
+        if track_quality:
+            report = avaliar_qualidade_features(models["metadata"], api_status)
+            feature_reports.append(report)
         preds_horas = None
         if models.get("model_ensemble") is not None:
             ensemble = models["model_ensemble"]
@@ -1406,7 +1607,15 @@ def predict_lineup_basico(df_lineup, live_data, porto_nome):
             sub["probabilidade_prevista"] = np.max(proba, axis=1).round(3)
         except Exception:
             sub["probabilidade_prevista"] = np.nan
+
+        # FASE 2: Adiciona confiança da previsão
+        if track_quality and feature_reports:
+            sub["confianca_previsao"] = feature_reports[-1].confidence_score
+        else:
+            sub["confianca_previsao"] = 100.0  # Default se não rastreando
+
         dfs.append(sub)
+
     df_out = pd.concat(dfs, ignore_index=True)
     if "data_chegada_dt" not in df_out.columns:
         if "Chegada" in df_out.columns:
@@ -1430,11 +1639,36 @@ def predict_lineup_basico(df_lineup, live_data, porto_nome):
     eta_espera = eta + pd.to_timedelta(df_out["tempo_espera_previsto_horas"].fillna(0), unit="h")
     df_out["eta_mais_espera"] = eta_espera
     df_out = df_out.sort_values("eta_mais_espera")
+
+    # FASE 2: Retorna também os reports se rastreando qualidade
+    if track_quality:
+        return df_out, feature_reports, api_status
     return df_out
 
 
-def inferir_lineup_inteligente(lineup_df, live_data, porto_nome, tem_dados_terminal=False):
-    df_out = predict_lineup_basico(lineup_df, live_data, porto_nome)
+def inferir_lineup_inteligente(lineup_df, live_data, porto_nome, tem_dados_terminal=False, track_quality=False):
+    """
+    Faz previsões inteligentes com suporte a modelos premium.
+
+    Args:
+        lineup_df: DataFrame com lineup
+        live_data: Dict com dados de contexto
+        porto_nome: Nome do porto
+        tem_dados_terminal: Se True, tem dados específicos do terminal
+        track_quality: Se True, retorna também relatórios de qualidade (Fase 2)
+
+    Returns:
+        Se track_quality=False: df_out
+        Se track_quality=True: (df_out, feature_reports, api_status)
+    """
+    # Chama predict_lineup_basico com rastreamento de qualidade
+    if track_quality:
+        df_out, feature_reports, api_status = predict_lineup_basico(
+            lineup_df, live_data, porto_nome, track_quality=True
+        )
+    else:
+        df_out = predict_lineup_basico(lineup_df, live_data, porto_nome, track_quality=False)
+
     df_out["perfil"] = df_out.apply(get_profile_from_row, axis=1)
     mae_map = {"VEGETAL": 38, "MINERAL": 31, "FERTILIZANTE": 79}
     df_out["mae_esperado"] = df_out["perfil"].map(mae_map)
@@ -1465,6 +1699,10 @@ def inferir_lineup_inteligente(lineup_df, live_data, porto_nome, tem_dados_termi
     eta_espera = eta + pd.to_timedelta(df_out["tempo_espera_previsto_horas"].fillna(0), unit="h")
     df_out["eta_mais_espera"] = eta_espera
     df_out = df_out.sort_values("eta_mais_espera")
+
+    # FASE 2: Retorna também os reports se rastreando qualidade
+    if track_quality:
+        return df_out, feature_reports, api_status
     return df_out
 
 
@@ -2038,16 +2276,23 @@ def compute_results():
     df_pred = None
     df_pred_view = None
     modo = "BASIC"
+    feature_reports = []
+    api_status = {}
+
     if porto_selecionado != "NACIONAL" and not df_lineup.empty:
         tem_dados_terminal = has_terminal_data(df_lineup)
         if lineup_path and lineup_path.suffix.lower() == ".xlsx":
             tem_dados_terminal = True
-        df_pred = inferir_lineup_inteligente(
+
+        # FASE 2: Rastreia qualidade das features
+        df_pred, feature_reports, api_status = inferir_lineup_inteligente(
             df_lineup,
             live_data,
             porto_selecionado.upper(),
             tem_dados_terminal=tem_dados_terminal,
+            track_quality=True,  # Ativa rastreamento de qualidade
         )
+
         if "tier" in df_pred.columns and df_pred["tier"].eq("PREMIUM").any():
             modo = "PREMIUM"
         PREDICTED_DIR.mkdir(parents=True, exist_ok=True)
@@ -2273,6 +2518,9 @@ def compute_results():
         "navio_espera": navio_espera,
         "navio_eta": navio_eta,
         "tipo_navio_previsto": tipo_navio_previsto,
+        # FASE 2: Qualidade das features
+        "feature_reports": feature_reports,
+        "api_status": api_status,
     }
 
 
@@ -2329,6 +2577,76 @@ with tabs[0]:
             "<div class='mode-banner'>MODO BÁSICO</div>",
             unsafe_allow_html=True,
         )
+
+    # FASE 2: Seção de Qualidade dos Dados
+    feature_reports = resultado.get("feature_reports", [])
+    api_status = resultado.get("api_status", {})
+
+    if feature_reports:
+        # Calcula score médio de confiança
+        avg_confidence = np.mean([r.confidence_score for r in feature_reports])
+
+        # Define cor e ícone baseado na confiança
+        if avg_confidence >= 80:
+            quality_color = "#28a745"  # Verde
+            quality_icon = "🟢"
+            quality_label = "ALTA"
+        elif avg_confidence >= 60:
+            quality_color = "#ffc107"  # Amarelo
+            quality_icon = "🟡"
+            quality_label = "MÉDIA"
+        else:
+            quality_color = "#dc3545"  # Vermelho
+            quality_icon = "🔴"
+            quality_label = "BAIXA"
+
+        st.markdown(
+            f"""
+<div class='mode-banner' style='background: {quality_color}; margin-top: 8px;'>
+    {quality_icon} QUALIDADE DOS DADOS: {quality_label} ({avg_confidence:.0f}%)
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+        # Agrupa todos os avisos críticos e warnings
+        all_critical = []
+        all_warnings = []
+        for report in feature_reports:
+            all_critical.extend(report.critical_issues)
+            all_warnings.extend(report.warnings)
+
+        # Remove duplicatas
+        all_critical = list(dict.fromkeys(all_critical))
+        all_warnings = list(dict.fromkeys(all_warnings))
+
+        # Exibe avisos críticos
+        if all_critical:
+            for issue in all_critical:
+                st.error(issue)
+
+        # Exibe warnings em expander
+        if all_warnings:
+            with st.expander("⚠️ Avisos de Qualidade dos Dados", expanded=False):
+                for warning in all_warnings:
+                    st.warning(warning)
+
+                # Detalhes técnicos
+                st.markdown("**Detalhes Técnicos:**")
+                st.markdown(f"- Dados de clima: {'✅ Disponível' if api_status.get('clima_ok') else '❌ Indisponível'}")
+                st.markdown(f"- Dados AIS (fila real): {'✅ Disponível' if api_status.get('ais_ok') else '❌ Indisponível'}")
+                st.markdown(f"- Dados de maré: {'✅ Disponível' if api_status.get('mare_ok') else '❌ Indisponível'}")
+                st.markdown(f"- Dados econômicos: {'✅ Disponível' if api_status.get('economia_ok') else '❌ Indisponível'}")
+
+                # Breakdown de qualidade
+                if feature_reports:
+                    report = feature_reports[0]  # Pega o primeiro report como representativo
+                    st.markdown("**Composição da Qualidade:**")
+                    for quality, count in report.quality_breakdown.items():
+                        if count > 0:
+                            pct = (count / report.total_features) * 100
+                            quality_name = quality.value.replace("_", " ").title()
+                            st.markdown(f"- {quality_name}: {count} features ({pct:.0f}%)")
 
     render_section_title("Resumo Executivo", ICON_SUMMARY)
     st.markdown(
