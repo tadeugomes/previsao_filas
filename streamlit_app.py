@@ -1306,6 +1306,252 @@ def avaliar_qualidade_features(metadata, api_status):
     )
 
 
+# ============================================================================
+# FASE 3 - MELHORIAS DE APIS E ROBUSTEZ
+# ============================================================================
+
+import logging
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+def obter_dados_clima_robusto(porto_nome, porto_cfg=None):
+    """
+    Obtém dados de clima com fallback garantido em múltiplas camadas.
+
+    Prioridades:
+    1. BigQuery INMET (mais preciso, requer credenciais)
+    2. Open-Meteo (gratuito, sempre disponível)
+    3. Valores conservadores padrão
+
+    Args:
+        porto_nome: Nome do porto
+        porto_cfg: Dict com municipio/uf para BigQuery
+
+    Returns:
+        tuple: (dados_clima dict, dados_forecast list, status_ok bool)
+    """
+    porto_key = porto_nome.upper()
+    clima = None
+    forecast = None
+    status_ok = False
+
+    # Prioridade 1: Tentar BigQuery INMET (mais preciso)
+    if BIGQUERY_AVAILABLE and porto_cfg:
+        try:
+            municipio = porto_cfg.get("municipio", porto_nome)
+            station_id = fetch_inmet_station_id(municipio=municipio)
+            if station_id:
+                clima = fetch_inmet_latest(station_id, port_name=porto_key)
+                if clima and clima.get("temp_media_dia"):
+                    logger.info(f"✓ Clima obtido via BigQuery INMET para {porto_nome}")
+                    status_ok = True
+        except Exception as e:
+            logger.warning(f"BigQuery INMET falhou para {porto_nome}: {e}")
+
+    # Prioridade 2: Open-Meteo (sempre disponível)
+    if not status_ok and WEATHER_API_AVAILABLE:
+        try:
+            clima = fetch_weather_fallback(porto_key)
+            forecast = get_weather_forecast(porto_key, days=7)
+
+            if clima and clima.get("temp_media_dia"):
+                logger.info(f"✓ Clima obtido via Open-Meteo para {porto_nome}")
+                status_ok = True
+        except Exception as e:
+            logger.warning(f"Open-Meteo falhou para {porto_nome}: {e}")
+
+    # Prioridade 3: Valores conservadores padrão (sempre funciona)
+    if not clima:
+        logger.warning(f"Usando valores climáticos conservadores para {porto_nome}")
+        clima = {
+            "temp_media_dia": 25.0,
+            "temp_max_dia": 30.0,
+            "temp_min_dia": 20.0,
+            "precipitacao_dia": 0.0,
+            "vento_rajada_max_dia": 5.0,
+            "vento_velocidade_media": 3.0,
+            "umidade_media_dia": 70.0,
+            "amplitude_termica": 10.0,
+            "chuva_acumulada_ultimos_3dias": 0.0,
+            "wave_height_max": 0.0,
+            "ressaca": 0,
+            "fonte": "default_conservative",
+        }
+
+    # Garantir forecast mínimo
+    if not forecast:
+        # Cria forecast básico baseado nos dados de clima
+        today = pd.Timestamp.today()
+        forecast = []
+        for i in range(7):
+            date = (today + pd.Timedelta(days=i)).strftime("%Y-%m-%d")
+            forecast.append({
+                "data": date,
+                "temp_media": clima.get("temp_media_dia", 25.0),
+                "temp_max": clima.get("temp_max_dia", 30.0),
+                "temp_min": clima.get("temp_min_dia", 20.0),
+                "precipitacao": clima.get("precipitacao_dia", 0.0) if i == 0 else 0.0,
+                "rajada_max": clima.get("vento_rajada_max_dia", 5.0),
+                "vento_max": clima.get("vento_velocidade_media", 3.0),
+                "wave_height_max": clima.get("wave_height_max", 0.0),
+                "ressaca": clima.get("ressaca", 0),
+            })
+
+    return clima, forecast, status_ok
+
+
+def obter_dados_economia_robusto(uf="MA"):
+    """
+    Obtém dados econômicos com fallback.
+
+    Args:
+        uf: UF para buscar dados do PAM
+
+    Returns:
+        tuple: (dados_pam dict, dados_precos dict, status_ok bool)
+    """
+    pam = None
+    precos = None
+    status_ok = False
+
+    if BIGQUERY_AVAILABLE:
+        try:
+            pam = fetch_pam_latest(uf=uf)
+            precos = fetch_ipea_latest()
+
+            if pam and precos:
+                logger.info(f"✓ Dados econômicos obtidos via BigQuery para {uf}")
+                status_ok = True
+        except Exception as e:
+            logger.warning(f"BigQuery economia falhou para {uf}: {e}")
+
+    # Fallback: valores médios históricos
+    if not pam:
+        logger.info(f"Usando valores econômicos default para {uf}")
+        pam = {
+            "producao_soja": 0.0,
+            "producao_milho": 0.0,
+            "producao_algodao": 0.0,
+        }
+
+    if not precos:
+        precos = {
+            "preco_soja_mensal": 100.0,
+            "preco_milho_mensal": 50.0,
+            "preco_algodao_mensal": 300.0,
+        }
+
+    return pam, precos, status_ok
+
+
+def obter_dados_ais_robusto(porto_nome, port_mapping=None):
+    """
+    Obtém dados AIS com fallback para dados locais.
+
+    IMPORTANTE: Dados AIS precisam ser fornecidos localmente via pipeline.
+    Para gerar dados AIS:
+    1. Coloque CSVs AIS raw em: data/ais/raw/*_YYYYMMDD.csv
+    2. Execute: python pipelines/ais_features.py --date YYYYMMDD
+    3. Dados processados vão para: data/ais_features/ais_features_YYYYMMDD.parquet
+
+    Args:
+        porto_nome: Nome do porto
+        port_mapping: Dict de mapeamento de portos
+
+    Returns:
+        tuple: (dados_ais DataFrame ou None, status_ok bool)
+    """
+    ais_df = None
+    status_ok = False
+
+    # Criar diretório se não existir
+    AIS_FEATURES_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Tentar carregar dados AIS locais
+    try:
+        ais_df_full = load_latest_ais_features()
+
+        if ais_df_full is not None and not ais_df_full.empty:
+            if port_mapping is None:
+                port_mapping = load_port_mapping()
+
+            ais_df = filter_features_by_port(ais_df_full, porto_nome, port_mapping)
+
+            if ais_df is not None and not ais_df.empty:
+                logger.info(f"✓ Dados AIS encontrados para {porto_nome} ({len(ais_df)} registros)")
+                status_ok = True
+            else:
+                logger.info(f"Dados AIS disponíveis mas nenhum registro para {porto_nome}")
+        else:
+            logger.info(f"Nenhum arquivo AIS encontrado em {AIS_FEATURES_DIR}")
+    except Exception as e:
+        logger.warning(f"Erro ao carregar dados AIS: {e}")
+
+    # Se não há dados AIS, informar ao usuário como obtê-los
+    if not status_ok:
+        logger.info(
+            "\n"
+            "╔════════════════════════════════════════════════════════════════╗\n"
+            "║  📡 DADOS AIS NÃO DISPONÍVEIS                                  ║\n"
+            "║                                                                ║\n"
+            "║  Para melhorar a precisão das previsões, forneça dados AIS:   ║\n"
+            "║                                                                ║\n"
+            "║  1. Coloque CSVs AIS raw em: data/ais/raw/*_YYYYMMDD.csv     ║\n"
+            "║                                                                ║\n"
+            "║  2. Execute o pipeline:                                        ║\n"
+            "║     python pipelines/ais_features.py --date YYYYMMDD          ║\n"
+            "║                                                                ║\n"
+            "║  3. Dados processados ficam em:                                ║\n"
+            "║     data/ais_features/ais_features_YYYYMMDD.parquet           ║\n"
+            "║                                                                ║\n"
+            "║  IMPACTO: Sem dados AIS, o modelo não conhece a fila real.    ║\n"
+            "║  Score de confiança será reduzido (~20-30%).                  ║\n"
+            "╚════════════════════════════════════════════════════════════════╝\n"
+        )
+
+    return ais_df, status_ok
+
+
+def criar_dados_ais_mock(porto_nome, num_navios=5):
+    """
+    Cria dados AIS mock para testes quando dados reais não disponíveis.
+
+    ATENÇÃO: Apenas para testes! Não use em produção.
+
+    Args:
+        porto_nome: Nome do porto
+        num_navios: Número de navios simulados
+
+    Returns:
+        DataFrame com dados AIS mock
+    """
+    logger.warning(f"⚠️ Criando dados AIS MOCK para {porto_nome} - APENAS PARA TESTES!")
+
+    today = pd.Timestamp.today()
+    dates = [(today - pd.Timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
+
+    data = []
+    for date in dates:
+        data.append({
+            "port_key": normalizar_texto(porto_nome),
+            "port_name": porto_nome,
+            "date": date,
+            "ais_navios_no_raio": float(num_navios),
+            "ais_fila_ao_largo": float(max(0, num_navios - 2)),
+            "ais_velocidade_media_kn": 5.0,
+            "ais_eta_media_horas": 12.0,
+            "ais_dist_media_km": 50.0,
+        })
+
+    return pd.DataFrame(data)
+
+
 def build_features_from_lineup(df_lineup, metadata, live_data, porto_nome):
     features = metadata["features"]
     df = df_lineup.copy()
@@ -2243,35 +2489,34 @@ def compute_results():
         "forecast": None,
         "eta_base": data_chegada,
     }
+
+    # FASE 3: Usar funções robustas para obter dados de APIs
     if porto_selecionado != "NACIONAL":
         porto_key = porto_selecionado.upper()
         porto_cfg = PORT_MUNICIPIO_UF.get(porto_key, {})
-        municipio = porto_cfg.get("municipio", porto_selecionado)
         uf = porto_cfg.get("uf", "MA")
-        if WEATHER_API_AVAILABLE:
-            try:
-                live_data["forecast"] = get_weather_forecast(porto_key, days=7)
-            except Exception:
-                live_data["forecast"] = None
-        try:
-            station_id = fetch_inmet_station_id(municipio=municipio)
-            live_data["clima"] = fetch_inmet_latest(station_id, port_name=porto_key)
-            live_data["pam"] = fetch_pam_latest(uf=uf)
-            live_data["precos"] = fetch_ipea_latest()
-        except Exception:
-            # Fallback para Open-Meteo se BigQuery falhar
-            if WEATHER_API_AVAILABLE:
-                live_data["clima"] = fetch_weather_fallback(porto_key) if porto_key else None
-            else:
-                live_data["clima"] = None
-            live_data["pam"] = None
-            live_data["precos"] = None
+
+        # Clima: Garantido com múltiplos fallbacks (BigQuery → Open-Meteo → Default)
+        clima, forecast, clima_ok = obter_dados_clima_robusto(porto_key, porto_cfg)
+        live_data["clima"] = clima
+        live_data["forecast"] = forecast
+
+        # Economia: BigQuery com fallback para defaults
+        pam, precos, economia_ok = obter_dados_economia_robusto(uf=uf)
+        live_data["pam"] = pam
+        live_data["precos"] = precos
+
+        # AIS: Tentar carregar dados locais
         port_mapping = load_port_mapping()
-        ais_df = load_latest_ais_features()
-        if ais_df is not None:
-            live_data["ais_df"] = filter_features_by_port(
-                ais_df, porto_selecionado, port_mapping
-            )
+        ais_df, ais_ok = obter_dados_ais_robusto(porto_selecionado, port_mapping)
+        if ais_df is not None and not ais_df.empty:
+            live_data["ais_df"] = ais_df
+        else:
+            live_data["ais_df"] = None
+
+        # Log resumo das APIs
+        logger.info(f"Status APIs para {porto_selecionado}: Clima={'OK' if clima_ok else 'Fallback'}, "
+                   f"Economia={'OK' if economia_ok else 'Fallback'}, AIS={'OK' if ais_ok else 'Indisponível'}")
 
     df_pred = None
     df_pred_view = None
