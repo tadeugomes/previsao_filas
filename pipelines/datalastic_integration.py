@@ -171,13 +171,15 @@ class DatalasticClient:
 
         porto = PORTOS[porto_name]
 
-        url = f"{self.base_url}/inradius_history"
+        # Converte raio de km para milhas náuticas (1 km = 0.539957 NM)
+        radius_nm = porto["radius"] * 0.539957
+
+        url = f"{self.base_url}/vessel_inradius"
         params = {
             "api-key": self.api_key,
-            "latitude": porto["lat"],
-            "longitude": porto["lon"],
-            "radius": porto["radius"],
-            "days": days,
+            "lat": porto["lat"],
+            "lon": porto["lon"],
+            "radius": radius_nm,
         }
 
         try:
@@ -186,10 +188,11 @@ class DatalasticClient:
 
             data = response.json()
 
-            # Estima créditos (cap de 500/dia)
-            positions_per_day = len(data) / days if data else 0
-            credits_per_day = min(positions_per_day, 500)
-            self.credits_used += int(credits_per_day * days)
+            # Para vessel_inradius, cada navio retornado = 1 crédito
+            if isinstance(data, list):
+                self.credits_used += len(data)
+            else:
+                self.credits_used += 1
 
             return data
 
