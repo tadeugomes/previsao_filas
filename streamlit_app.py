@@ -420,6 +420,112 @@ def load_models_for_profile(profile):
 
 
 @st.cache_data
+def load_light_models_for_profile(profile):
+    """
+    Carrega modelos simplificados (light) com apenas 15 features críticas.
+
+    Estes modelos são usados como fallback quando a qualidade dos dados < 80%.
+    Modelos light priorizam confiabilidade sobre precisão máxima.
+
+    Estrutura esperada:
+    - models/{profile}_light_metadata.json
+    - models/{profile}_light_ensemble_reg.pkl
+    - models/{profile}_light_lgb_reg.pkl
+    - models/{profile}_light_lgb_clf.pkl
+
+    Returns:
+        dict com metadata e modelos, ou None se não existir
+    """
+    metadata_path = MODEL_DIR / f"{profile.lower()}_light_metadata.json"
+    if not metadata_path.exists():
+        return None
+
+    try:
+        with metadata_path.open("r", encoding="utf-8") as f:
+            metadata = json.load(f)
+
+        artifacts = metadata.get("artifacts", {})
+        ensemble_path = MODEL_DIR / artifacts.get("ensemble_reg", "")
+        reg_path = MODEL_DIR / artifacts.get("lgb_reg", "")
+        clf_path = MODEL_DIR / artifacts.get("lgb_clf", "")
+
+        # Carrega ensemble se existir
+        ensemble_model = None
+        if ensemble_path.exists():
+            ensemble_model = joblib.load(ensemble_path)
+
+        # Modelos base são obrigatórios
+        if not reg_path.exists() or not clf_path.exists():
+            return None
+
+        with reg_path.open("rb") as f:
+            model_reg = pickle.load(f)
+        with clf_path.open("rb") as f:
+            model_clf = pickle.load(f)
+
+        return {
+            "metadata": metadata,
+            "model_reg": model_reg,
+            "model_ensemble": ensemble_model,
+            "model_clf": model_clf,
+            "is_light": True,
+        }
+    except Exception as e:
+        logger.warning(f"Erro ao carregar modelo light para {profile}: {e}")
+        return None
+
+
+def select_model_by_quality(profile, confidence_score, api_status):
+    """
+    Seleciona o modelo apropriado baseado na qualidade dos dados.
+
+    Estratégia de fallback inteligente:
+    - Qualidade >= 80%: Usa modelo completo (54 features)
+    - Qualidade < 80%: Tenta usar modelo light (15 features)
+    - Se modelo light não existe: Usa modelo completo com aviso
+
+    Args:
+        profile: Perfil do modelo (VEGETAL, MINERAL, FERTILIZANTE)
+        confidence_score: Score de confiança 0-100 (calculado pela Fase 2)
+        api_status: Status das APIs (dict com clima_ok, ais_ok, etc)
+
+    Returns:
+        tuple: (models_dict, model_type, warning_message)
+            - models_dict: Dicionário com os modelos carregados
+            - model_type: "completo" ou "light"
+            - warning_message: Mensagem de aviso ou None
+    """
+    # Tenta carregar modelo completo
+    models_completo = load_models_for_profile(profile)
+
+    if models_completo is None:
+        return None, None, "❌ Nenhum modelo disponível para este perfil"
+
+    # Se qualidade >= 80%, usa modelo completo
+    if confidence_score >= 80:
+        return models_completo, "completo", None
+
+    # Qualidade < 80%: tenta usar modelo light
+    models_light = load_light_models_for_profile(profile)
+
+    if models_light is not None:
+        # Modelo light disponível - usa ele
+        warning = (
+            f"⚠️ Usando modelo simplificado (15 features) devido à qualidade dos dados ({confidence_score:.0f}%). "
+            f"Modelo light prioriza confiabilidade, mas pode ter precisão reduzida."
+        )
+        return models_light, "light", warning
+    else:
+        # Modelo light não disponível - usa completo com aviso
+        warning = (
+            f"⚠️ Qualidade dos dados abaixo do ideal ({confidence_score:.0f}%). "
+            f"Modelo completo sendo usado com muitos valores default. "
+            f"Considere melhorar a disponibilidade de dados (clima, AIS, etc) para previsões mais confiáveis."
+        )
+        return models_completo, "completo", warning
+
+
+@st.cache_data
 def load_premium_registry():
     if PREMIUM_REGISTRY_PATH.exists():
         with PREMIUM_REGISTRY_PATH.open("r", encoding="utf-8") as f:
@@ -1802,18 +1908,50 @@ def predict_lineup_basico(df_lineup, live_data, porto_nome, track_quality=False)
 
     dfs = []
     feature_reports = []
+    model_selection_info = []  # FASE 4: Rastreia qual modelo foi usado
 
     for profile, sub in df.groupby("perfil_modelo", dropna=False):
-        models = load_models_for_profile(profile)
-        if not models:
+        # FASE 4: Primeiro avalia qualidade para decidir qual modelo usar
+        # Precisamos carregar modelos completos primeiro para avaliar qualidade
+        models_temp = load_models_for_profile(profile)
+        if not models_temp:
             sub["tempo_espera_previsto_horas"] = np.nan
             sub["tempo_espera_previsto_dias"] = np.nan
             sub["classe_espera_prevista"] = "Indisponivel"
             sub["risco_previsto"] = "Indisponivel"
             sub["probabilidade_prevista"] = np.nan
             sub["confianca_previsao"] = 0.0
+            sub["modelo_usado"] = "nenhum"
             dfs.append(sub)
             continue
+
+        # FASE 4: Avalia qualidade ANTES de construir features
+        confidence_score = 100.0  # Default
+        if track_quality:
+            report_temp = avaliar_qualidade_features(models_temp["metadata"], api_status)
+            confidence_score = report_temp.confidence_score
+
+        # FASE 4: Seleciona modelo baseado na qualidade
+        models, model_type, warning_msg = select_model_by_quality(profile, confidence_score, api_status)
+
+        if models is None:
+            sub["tempo_espera_previsto_horas"] = np.nan
+            sub["tempo_espera_previsto_dias"] = np.nan
+            sub["classe_espera_prevista"] = "Indisponivel"
+            sub["risco_previsto"] = "Indisponivel"
+            sub["probabilidade_prevista"] = np.nan
+            sub["confianca_previsao"] = 0.0
+            sub["modelo_usado"] = "nenhum"
+            dfs.append(sub)
+            continue
+
+        # Armazena info de seleção de modelo
+        model_selection_info.append({
+            "profile": profile,
+            "model_type": model_type,
+            "confidence": confidence_score,
+            "warning": warning_msg
+        })
 
         features_data = build_features_from_lineup(sub, models["metadata"], live_data, porto_nome)
 
@@ -1860,6 +1998,10 @@ def predict_lineup_basico(df_lineup, live_data, porto_nome, track_quality=False)
         else:
             sub["confianca_previsao"] = 100.0  # Default se não rastreando
 
+        # FASE 4: Adiciona informação de qual modelo foi usado
+        sub["modelo_usado"] = model_type
+        sub["num_features"] = len(models["metadata"].get("features", []))
+
         dfs.append(sub)
 
     df_out = pd.concat(dfs, ignore_index=True)
@@ -1886,9 +2028,9 @@ def predict_lineup_basico(df_lineup, live_data, porto_nome, track_quality=False)
     df_out["eta_mais_espera"] = eta_espera
     df_out = df_out.sort_values("eta_mais_espera")
 
-    # FASE 2: Retorna também os reports se rastreando qualidade
+    # FASE 2 & FASE 4: Retorna também os reports e info de seleção de modelo
     if track_quality:
-        return df_out, feature_reports, api_status
+        return df_out, feature_reports, api_status, model_selection_info
     return df_out
 
 
@@ -1905,11 +2047,12 @@ def inferir_lineup_inteligente(lineup_df, live_data, porto_nome, tem_dados_termi
 
     Returns:
         Se track_quality=False: df_out
-        Se track_quality=True: (df_out, feature_reports, api_status)
+        Se track_quality=True: (df_out, feature_reports, api_status, model_selection_info)
     """
     # Chama predict_lineup_basico com rastreamento de qualidade
+    model_selection_info = []
     if track_quality:
-        df_out, feature_reports, api_status = predict_lineup_basico(
+        df_out, feature_reports, api_status, model_selection_info = predict_lineup_basico(
             lineup_df, live_data, porto_nome, track_quality=True
         )
     else:
@@ -1946,9 +2089,9 @@ def inferir_lineup_inteligente(lineup_df, live_data, porto_nome, tem_dados_termi
     df_out["eta_mais_espera"] = eta_espera
     df_out = df_out.sort_values("eta_mais_espera")
 
-    # FASE 2: Retorna também os reports se rastreando qualidade
+    # FASE 2 & FASE 4: Retorna também os reports e info de seleção de modelo
     if track_quality:
-        return df_out, feature_reports, api_status
+        return df_out, feature_reports, api_status, model_selection_info
     return df_out
 
 
@@ -2523,14 +2666,15 @@ def compute_results():
     modo = "BASIC"
     feature_reports = []
     api_status = {}
+    model_selection_info = []  # FASE 4: Info sobre qual modelo foi usado
 
     if porto_selecionado != "NACIONAL" and not df_lineup.empty:
         tem_dados_terminal = has_terminal_data(df_lineup)
         if lineup_path and lineup_path.suffix.lower() == ".xlsx":
             tem_dados_terminal = True
 
-        # FASE 2: Rastreia qualidade das features
-        df_pred, feature_reports, api_status = inferir_lineup_inteligente(
+        # FASE 2 & FASE 4: Rastreia qualidade e seleção de modelo
+        df_pred, feature_reports, api_status, model_selection_info = inferir_lineup_inteligente(
             df_lineup,
             live_data,
             porto_selecionado.upper(),
@@ -2853,6 +2997,36 @@ with tabs[0]:
 """,
             unsafe_allow_html=True,
         )
+
+        # FASE 4: Exibe avisos de seleção de modelo (se houver)
+        for model_info in model_selection_info:
+            if model_info.get("warning"):
+                if model_info["model_type"] == "light":
+                    st.info(model_info["warning"])
+                else:
+                    st.warning(model_info["warning"])
+
+            # Badge informativo sobre qual modelo foi usado
+            if model_info["model_type"] == "light":
+                st.markdown(
+                    f"""
+<div style='background: #e3f2fd; border-left: 4px solid #2196f3; padding: 8px 12px; margin: 8px 0; border-radius: 4px;'>
+    <strong>🔧 Modelo Simplificado ({model_info['profile']})</strong><br>
+    Usando 15 features confiáveis | Qualidade: {model_info['confidence']:.0f}%
+</div>
+""",
+                    unsafe_allow_html=True,
+                )
+            elif model_info["confidence"] < 80:
+                st.markdown(
+                    f"""
+<div style='background: #fff3e0; border-left: 4px solid #ff9800; padding: 8px 12px; margin: 8px 0; border-radius: 4px;'>
+    <strong>⚙️ Modelo Completo ({model_info['profile']})</strong><br>
+    Qualidade dos dados abaixo do ideal: {model_info['confidence']:.0f}%
+</div>
+""",
+                    unsafe_allow_html=True,
+                )
 
         # Agrupa todos os avisos críticos e warnings
         all_critical = []
