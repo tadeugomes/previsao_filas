@@ -1,0 +1,49 @@
+{
+  "profile": "VEGETAL",
+  "model_type": "light",
+  "is_mock": true,
+  "features": [
+    "navios_no_fundeio_na_chegada",
+    "porto_tempo_medio_historico",
+    "tempo_espera_ma5",
+    "navios_na_fila_7d",
+    "nome_porto",
+    "nome_terminal",
+    "natureza_carga",
+    "movimentacao_total_toneladas",
+    "mes",
+    "periodo_safra",
+    "dia_semana",
+    "flag_soja",
+    "flag_milho",
+    "precipitacao_dia",
+    "vento_rajada_max_dia"
+  ],
+  "target": "tempo_espera_horas",
+  "trained_at": "2026-01-28T15:32:18.080693Z",
+  "training_info": {
+    "total_samples": "MOCK",
+    "train_samples": "MOCK",
+    "val_samples": "MOCK",
+    "test_samples": "MOCK",
+    "features_removed": 15,
+    "note": "Este \u00e9 um modelo MOCK para demonstra\u00e7\u00e3o do sistema de fallback"
+  },
+  "artifacts": {
+    "lgb_reg": "vegetal_light_lgb_reg.pkl",
+    "lgb_clf": "vegetal_light_lgb_clf.pkl"
+  },
+  "metrics": {
+    "val": {
+      "mae": "MOCK",
+      "rmse": "MOCK",
+      "r2": "MOCK"
+    },
+    "test": {
+      "mae": "MOCK",
+      "rmse": "MOCK",
+      "r2": "MOCK"
+    }
+  },
+  "warning": "\u26a0\ufe0f MODELO MOCK - Apenas para demonstra\u00e7\u00e3o do sistema de fallback"
+}
