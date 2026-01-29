@@ -144,10 +144,18 @@ class EnrichedPredictor:
     def _load_lineup_history(self) -> pd.DataFrame:
         """Carrega histórico de lineups (se existir)."""
         if LINEUP_HISTORY.exists():
-            df = pd.read_parquet(LINEUP_HISTORY)
-            if 'prev_chegada' in df.columns:
-                df['prev_chegada'] = pd.to_datetime(df['prev_chegada'])
-            return df
+            try:
+                df = pd.read_parquet(LINEUP_HISTORY)
+                if 'prev_chegada' in df.columns:
+                    # Tentar converter para datetime, ignorar erros
+                    df['prev_chegada'] = pd.to_datetime(df['prev_chegada'], errors='coerce')
+                # Renomear 'porto' para 'nome_porto' se necessário
+                if 'porto' in df.columns and 'nome_porto' not in df.columns:
+                    df['nome_porto'] = df['porto']
+                return df
+            except Exception as e:
+                print(f"⚠️ Erro ao carregar lineup_history.parquet: {e}")
+                return pd.DataFrame()
         else:
             # Retornar DataFrame vazio se não existir
             return pd.DataFrame()
@@ -156,21 +164,28 @@ class EnrichedPredictor:
         """Calcula estatísticas históricas por porto."""
         stats = {}
 
-        if len(self.lineup_history) > 0 and 'nome_porto' in self.lineup_history.columns:
-            for porto in PORTOS.keys():
-                porto_data = self.lineup_history[
-                    self.lineup_history['nome_porto'] == porto
-                ]
+        try:
+            if len(self.lineup_history) > 0 and 'nome_porto' in self.lineup_history.columns:
+                for porto in PORTOS.keys():
+                    porto_data = self.lineup_history[
+                        self.lineup_history['nome_porto'] == porto
+                    ]
 
-                if len(porto_data) > 0:
-                    stats[porto] = {
-                        "tempo_medio": porto_data.get("tempo_espera_horas", pd.Series([48])).mean(),
-                        "count": len(porto_data),
-                    }
-                else:
+                    if len(porto_data) > 0 and 'tempo_espera_horas' in porto_data.columns:
+                        tempo_medio = porto_data["tempo_espera_horas"].mean()
+                        stats[porto] = {
+                            "tempo_medio": tempo_medio if not pd.isna(tempo_medio) else 48.0,
+                            "count": len(porto_data),
+                        }
+                    else:
+                        stats[porto] = {"tempo_medio": 48.0, "count": 0}
+            else:
+                # Valores default
+                for porto in PORTOS.keys():
                     stats[porto] = {"tempo_medio": 48.0, "count": 0}
-        else:
-            # Valores default
+        except Exception as e:
+            print(f"⚠️ Erro ao calcular estatísticas de portos: {e}")
+            # Valores default em caso de erro
             for porto in PORTOS.keys():
                 stats[porto] = {"tempo_medio": 48.0, "count": 0}
 
@@ -245,30 +260,36 @@ class EnrichedPredictor:
         Returns:
             Número estimado de navios na fila (últimos 7 dias)
         """
-        if len(self.lineup_history) == 0 or 'nome_porto' not in self.lineup_history.columns:
-            # Default: 3 navios
-            return 3
+        try:
+            if len(self.lineup_history) == 0 or 'nome_porto' not in self.lineup_history.columns:
+                # Default: 3 navios
+                return 3
 
-        # Filtrar lineups do mesmo porto e mês
-        porto_data = self.lineup_history[
-            (self.lineup_history['nome_porto'] == porto) &
-            (self.lineup_history['prev_chegada'].dt.month == data.month)
-        ]
+            # Filtrar lineups do mesmo porto e mês
+            porto_data = self.lineup_history[
+                (self.lineup_history['nome_porto'] == porto) &
+                (self.lineup_history['prev_chegada'].notna()) &
+                (self.lineup_history['prev_chegada'].dt.month == data.month)
+            ]
 
-        if len(porto_data) == 0:
-            return 3
+            if len(porto_data) == 0:
+                return 3
 
-        # Contar navios por dia e calcular média
-        navios_por_dia = porto_data.groupby(
-            porto_data['prev_chegada'].dt.date
-        ).size()
+            # Contar navios por dia e calcular média
+            navios_por_dia = porto_data.groupby(
+                porto_data['prev_chegada'].dt.date
+            ).size()
 
-        media_diaria = navios_por_dia.mean()
+            media_diaria = navios_por_dia.mean()
 
-        # Estimar fila de 7 dias
-        fila_7d = int(media_diaria * 7) if not pd.isna(media_diaria) else 3
+            # Estimar fila de 7 dias
+            fila_7d = int(media_diaria * 7) if not pd.isna(media_diaria) else 3
 
-        return max(1, min(fila_7d, 20))  # Entre 1 e 20 navios
+            return max(1, min(fila_7d, 20))  # Entre 1 e 20 navios
+
+        except Exception as e:
+            print(f"⚠️ Erro ao estimar fila histórica: {e}")
+            return 3  # Fallback
 
     def inferir_perfil(self, tipo_navio: str, natureza_carga: str, porto: str) -> str:
         """
