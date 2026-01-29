@@ -1,0 +1,226 @@
+======================================================================
+TREINO DE MODELOS REAIS COM DADOS AIS
+======================================================================
+
+======================================================================
+CARREGANDO DADOS AIS
+======================================================================
+
+✅ Dataset carregado: 308 registros
+   Colunas: ['imo', 'name', 'type', 'porto', 'berthing_time', 'lat', 'lon', 'waiting_time_hours', 'num_positions']
+   Período: 2025-12-29T11:51:00Z a 2026-01-29T06:43:00Z
+
+======================================================================
+PREPROCESSAMENTO DE FEATURES
+======================================================================
+
+📅 Adicionando features temporais...
+📦 Adicionando features de carga...
+🏭 Adicionando features de porto...
+🚢 Adicionando features de navio...
+📊 Adicionando features de movimentação...
+📈 Calculando features históricas...
+🚦 Estimando features de fila...
+🌤️  Adicionando features climáticas (defaults)...
+
+✅ Preprocessamento concluído!
+   Total de features: 34
+   Registros válidos: 270/308
+
+✅ Dados válidos para treino: 270
+
+======================================================================
+PERFIL: VEGETAL
+======================================================================
+Amostras: 194
+Features usadas (15): ['navios_no_fundeio_na_chegada', 'porto_tempo_medio_historico', 'tempo_espera_ma5', 'navios_na_fila_7d', 'nome_porto_encoded', 'natureza_carga_encoded', 'movimentacao_total_toneladas', 'mes', 'periodo_safra', 'dia_semana', 'flag_soja', 'flag_milho', 'dwt_normalizado', 'calado_normalizado', 'tipo_navio_encoded']
+
+======================================================================
+TREINANDO MODELO: VEGETAL
+======================================================================
+
+📊 Dados de treino:
+   Train: 135 amostras
+   Val:   29 amostras
+   Test:  30 amostras
+
+🤖 Treinando LightGBM Regressor...
+
+📊 Métricas Regressor:
+   Train - MAE: 15.20h | R²: 0.990
+   Val   - MAE: 25.61h   | R²: 0.970
+   Test  - MAE: 19.00h  | R²: 0.982
+
+🤖 Treinando LightGBM Classifier...
+
+📊 Métricas Classifier:
+   Train - Accuracy: 1.000
+   Val   - Accuracy: 0.931
+   Test  - Accuracy: 0.933
+
+🔍 Top 10 features mais importantes:
+   tempo_espera_ma5                   :    216
+   porto_tempo_medio_historico        :    169
+   dia_semana                         :    115
+   navios_no_fundeio_na_chegada       :     55
+   mes                                :     16
+   navios_na_fila_7d                  :     15
+   nome_porto_encoded                 :      6
+   movimentacao_total_toneladas       :      0
+   natureza_carga_encoded             :      0
+   periodo_safra                      :      0
+
+✅ VALIDAÇÃO DE ACEITAÇÃO:
+   ✅ MAE < 30h (test)
+   ✅ MAE < 50h (test)
+   ✅ R² > 0.20 (test)
+   ✅ Accuracy > 0.40 (test)
+
+🎉 Modelo VEGETAL APROVADO para produção!
+
+💾 Modelos salvos em models/:
+   - vegetal_light_lgb_reg.pkl
+   - vegetal_light_lgb_clf.pkl
+   - vegetal_light_metadata.json
+
+======================================================================
+PERFIL: MINERAL
+======================================================================
+Amostras: 15
+⚠️  AVISO: Poucas amostras para MINERAL. Usando todos os dados.
+Features usadas (15): ['navios_no_fundeio_na_chegada', 'porto_tempo_medio_historico', 'tempo_espera_ma5', 'navios_na_fila_7d', 'nome_porto_encoded', 'natureza_carga_encoded', 'movimentacao_total_toneladas', 'mes', 'dia_semana', 'dwt_normalizado', 'calado_normalizado', 'tipo_navio_encoded', 'densidade_carga', 'capacidade_porto', 'num_bercos']
+
+======================================================================
+TREINANDO MODELO: MINERAL
+======================================================================
+
+📊 Dados de treino:
+   Train: 188 amostras
+   Val:   41 amostras
+   Test:  41 amostras
+
+🤖 Treinando LightGBM Regressor...
+
+📊 Métricas Regressor:
+   Train - MAE: 10.61h | R²: 0.994
+   Val   - MAE: 16.07h   | R²: 0.980
+   Test  - MAE: 16.38h  | R²: 0.985
+
+🤖 Treinando LightGBM Classifier...
+
+📊 Métricas Classifier:
+   Train - Accuracy: 1.000
+   Val   - Accuracy: 0.976
+   Test  - Accuracy: 0.976
+
+🔍 Top 10 features mais importantes:
+   porto_tempo_medio_historico        :    311
+   tempo_espera_ma5                   :    291
+   navios_no_fundeio_na_chegada       :    209
+   dia_semana                         :    113
+   capacidade_porto                   :    112
+   nome_porto_encoded                 :     80
+   navios_na_fila_7d                  :     28
+   tipo_navio_encoded                 :     24
+   num_bercos                         :     22
+   movimentacao_total_toneladas       :     13
+
+✅ VALIDAÇÃO DE ACEITAÇÃO:
+   ✅ MAE < 30h (test)
+   ✅ MAE < 50h (test)
+   ✅ R² > 0.20 (test)
+   ✅ Accuracy > 0.40 (test)
+
+🎉 Modelo MINERAL APROVADO para produção!
+
+💾 Modelos salvos em models/:
+   - mineral_light_lgb_reg.pkl
+   - mineral_light_lgb_clf.pkl
+   - mineral_light_metadata.json
+
+======================================================================
+PERFIL: FERTILIZANTE
+======================================================================
+Amostras: 61
+Features usadas (15): ['navios_no_fundeio_na_chegada', 'porto_tempo_medio_historico', 'tempo_espera_ma5', 'navios_na_fila_7d', 'nome_porto_encoded', 'natureza_carga_encoded', 'movimentacao_total_toneladas', 'mes', 'periodo_safra', 'dia_semana', 'dwt_normalizado', 'calado_normalizado', 'tipo_navio_encoded', 'flag_quimico', 'temperatura_media']
+
+======================================================================
+TREINANDO MODELO: FERTILIZANTE
+======================================================================
+
+📊 Dados de treino:
+   Train: 42 amostras
+   Val:   9 amostras
+   Test:  10 amostras
+
+🤖 Treinando LightGBM Regressor...
+
+📊 Métricas Regressor:
+   Train - MAE: 34.36h | R²: 0.930
+   Val   - MAE: 32.65h   | R²: 0.935
+   Test  - MAE: 60.29h  | R²: 0.838
+
+🤖 Treinando LightGBM Classifier...
+
+📊 Métricas Classifier:
+   Train - Accuracy: 0.952
+   Val   - Accuracy: 0.889
+   Test  - Accuracy: 0.900
+
+🔍 Top 10 features mais importantes:
+   porto_tempo_medio_historico        :     58
+   tempo_espera_ma5                   :     39
+   nome_porto_encoded                 :     16
+   dia_semana                         :      4
+   navios_no_fundeio_na_chegada       :      1
+   natureza_carga_encoded             :      0
+   navios_na_fila_7d                  :      0
+   movimentacao_total_toneladas       :      0
+   mes                                :      0
+   periodo_safra                      :      0
+
+✅ VALIDAÇÃO DE ACEITAÇÃO:
+   ❌ MAE < 30h (test)
+   ❌ MAE < 50h (test)
+   ✅ R² > 0.20 (test)
+   ✅ Accuracy > 0.40 (test)
+
+⚠️  Modelo FERTILIZANTE NÃO atende todos os critérios (mas pode ser útil)
+
+💾 Modelos salvos em models/:
+   - fertilizante_light_lgb_reg.pkl
+   - fertilizante_light_lgb_clf.pkl
+   - fertilizante_light_metadata.json
+
+======================================================================
+RESUMO FINAL
+======================================================================
+
+VEGETAL:
+   MAE (test):  19.00h
+   R² (test):   0.982
+   Acc (test):  0.933
+   Status:      ✅ APROVADO
+
+MINERAL:
+   MAE (test):  16.38h
+   R² (test):   0.985
+   Acc (test):  0.976
+   Status:      ✅ APROVADO
+
+FERTILIZANTE:
+   MAE (test):  60.29h
+   R² (test):   0.838
+   Acc (test):  0.900
+   Status:      ⚠️  Revisar
+
+======================================================================
+✅ TREINO CONCLUÍDO!
+======================================================================
+
+Modelos salvos em: models/
+Próximos passos:
+  1. Testar modelos com streamlit_app.py
+  2. Validar previsões
+  3. Monitorar performance em produção
+======================================================================

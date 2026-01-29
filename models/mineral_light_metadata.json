@@ -1,49 +1,44 @@
 {
   "profile": "MINERAL",
   "model_type": "light",
-  "is_mock": true,
+  "is_mock": false,
   "features": [
     "navios_no_fundeio_na_chegada",
     "porto_tempo_medio_historico",
     "tempo_espera_ma5",
     "navios_na_fila_7d",
-    "nome_porto",
-    "nome_terminal",
-    "natureza_carga",
+    "nome_porto_encoded",
+    "natureza_carga_encoded",
     "movimentacao_total_toneladas",
     "mes",
     "dia_semana",
-    "precipitacao_dia",
-    "vento_rajada_max_dia",
-    "temp_media_dia",
-    "tipo_navegacao",
-    "ais_fila_ao_largo"
+    "dwt_normalizado",
+    "calado_normalizado",
+    "tipo_navio_encoded",
+    "densidade_carga",
+    "capacidade_porto",
+    "num_bercos"
   ],
   "target": "tempo_espera_horas",
-  "trained_at": "2026-01-28T15:32:18.087803Z",
-  "training_info": {
-    "total_samples": "MOCK",
-    "train_samples": "MOCK",
-    "val_samples": "MOCK",
-    "test_samples": "MOCK",
-    "features_removed": 15,
-    "note": "Este \u00e9 um modelo MOCK para demonstra\u00e7\u00e3o do sistema de fallback"
+  "trained_at": "2026-01-29T08:40:43.713476",
+  "data_source": "datalastic_ais",
+  "num_samples": 188,
+  "metrics": {
+    "test_mae": 16.37793695789886,
+    "test_r2": 0.9854023725162292,
+    "test_acc": 0.975609756097561,
+    "val_mae": 16.06680151093748,
+    "val_r2": 0.9804434469992562,
+    "passed": true
   },
   "artifacts": {
     "lgb_reg": "mineral_light_lgb_reg.pkl",
     "lgb_clf": "mineral_light_lgb_clf.pkl"
   },
-  "metrics": {
-    "val": {
-      "mae": "MOCK",
-      "rmse": "MOCK",
-      "r2": "MOCK"
-    },
-    "test": {
-      "mae": "MOCK",
-      "rmse": "MOCK",
-      "r2": "MOCK"
-    }
-  },
-  "warning": "\u26a0\ufe0f MODELO MOCK - Apenas para demonstra\u00e7\u00e3o do sistema de fallback"
+  "training_params": {
+    "n_estimators": 200,
+    "max_depth": 8,
+    "learning_rate": 0.05,
+    "min_child_samples": 10
+  }
 }
