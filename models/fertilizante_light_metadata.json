@@ -1,0 +1,44 @@
+{
+  "profile": "FERTILIZANTE",
+  "model_type": "light",
+  "is_mock": false,
+  "features": [
+    "navios_no_fundeio_na_chegada",
+    "porto_tempo_medio_historico",
+    "tempo_espera_ma5",
+    "navios_na_fila_7d",
+    "nome_porto_encoded",
+    "natureza_carga_encoded",
+    "movimentacao_total_toneladas",
+    "mes",
+    "periodo_safra",
+    "dia_semana",
+    "dwt_normalizado",
+    "calado_normalizado",
+    "tipo_navio_encoded",
+    "flag_quimico",
+    "temperatura_media"
+  ],
+  "target": "tempo_espera_horas",
+  "trained_at": "2026-01-29T08:40:43.786771",
+  "data_source": "datalastic_ais",
+  "num_samples": 42,
+  "metrics": {
+    "test_mae": 60.29314308250689,
+    "test_r2": 0.8382108856648725,
+    "test_acc": 0.9,
+    "val_mae": 32.645294064973456,
+    "val_r2": 0.9345061445869145,
+    "passed": false
+  },
+  "artifacts": {
+    "lgb_reg": "fertilizante_light_lgb_reg.pkl",
+    "lgb_clf": "fertilizante_light_lgb_clf.pkl"
+  },
+  "training_params": {
+    "n_estimators": 200,
+    "max_depth": 8,
+    "learning_rate": 0.05,
+    "min_child_samples": 10
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "profile": "VEGETAL",
+  "model_type": "light",
+  "is_mock": false,
+  "features": [
+    "navios_no_fundeio_na_chegada",
+    "porto_tempo_medio_historico",
+    "tempo_espera_ma5",
+    "navios_na_fila_7d",
+    "nome_porto_encoded",
+    "natureza_carga_encoded",
+    "movimentacao_total_toneladas",
+    "mes",
+    "periodo_safra",
+    "dia_semana",
+    "flag_soja",
+    "flag_milho",
+    "dwt_normalizado",
+    "calado_normalizado",
+    "tipo_navio_encoded"
+  ],
+  "target": "tempo_espera_horas",
+  "trained_at": "2026-01-29T08:40:43.203144",
+  "data_source": "datalastic_ais",
+  "num_samples": 135,
+  "metrics": {
+    "test_mae": 18.999798793528935,
+    "test_r2": 0.9823133894642675,
+    "test_acc": 0.9333333333333333,
+    "val_mae": 25.607023062154134,
+    "val_r2": 0.9703222775945369,
+    "passed": true
+  },
+  "artifacts": {
+    "lgb_reg": "vegetal_light_lgb_reg.pkl",
+    "lgb_clf": "vegetal_light_lgb_clf.pkl"
+  },
+  "training_params": {
+    "n_estimators": 200,
+    "max_depth": 8,
+    "learning_rate": 0.05,
+    "min_child_samples": 10
+  }
+}

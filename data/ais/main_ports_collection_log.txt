@@ -1,0 +1,245 @@
+======================================================================
+COLETA: SANTOS + PARANAGUÁ + RIO GRANDE
+======================================================================
+
+📅 Período: 60 dias
+🎯 Filtro: Cargo e Tanker apenas
+💳 Créditos disponíveis: 16,939
+
+Pressione ENTER para iniciar a coleta...
+======================================================================
+PROCESSANDO: SANTOS
+======================================================================
+
+📡 Buscando navios atuais...
+✅ Total de navios: 131
+🎯 Cargo/Tanker com IMO: 43
+💳 Estimativa: 2,580 créditos
+
+📊 Tipos de navios relevantes encontrados:
+   Cargo: 34
+   Cargo - Hazard A (Major): 1
+   Tanker: 6
+   Tanker - Hazard B: 2
+
+🚢 Processando 43 navios (60 dias cada)...
+
+[1/43] ALCYONE I (Cargo) → 822 pos → 1 atracação(ões) → N/A
+[2/43] GREAT HOPE (Cargo) → 943 pos → 1 atracação(ões) → ~700h
+[3/43] UNITY EXPLORER (Cargo) → 886 pos → 1 atracação(ões) → ~719h
+[4/43] GRANDE BUENOS AIRES (Cargo) → 966 pos → 1 atracação(ões) → N/A
+[5/43] MAIRINI (Cargo) → 516 pos → 1 atracação(ões) → N/A
+[6/43] SANTA ANGELINA (Cargo) → 1086 pos → 3 atracação(ões) → ~696h
+[7/43] LEFTERIS T (Cargo) → 40 pos → Nenhuma atracação
+[8/43] SERRA POLAR (Tanker) → 1316 pos → 4 atracação(ões) → ~670h
+[9/43] ARDENNES (Cargo) → 874 pos → 1 atracação(ões) → N/A
+[10/43] SEABONI (Cargo) → 1071 pos → 2 atracação(ões) → ~627h
+
+  💳 Créditos: 601 | Restantes: 16,338
+
+[11/43] STOLT MAGNESIUM (Tanker - Hazard B) → 614 pos → 2 atracação(ões) → ~717h
+[12/43] EASTERLY BIRDIE (Tanker) → 656 pos → 1 atracação(ões) → ~692h
+[13/43] PREMIUM DO BRASIL (Cargo) → 617 pos → 1 atracação(ões) → ~688h
+[14/43] REN JIAN 20 (Cargo) → 640 pos → 1 atracação(ões) → N/A
+[15/43] BARTOLOMEU DIAS (Cargo) → 973 pos → 1 atracação(ões) → ~252h
+[16/43] ADVENTURER (Cargo) → 1025 pos → 1 atracação(ões) → ~545h
+[17/43] POLARIS LEADER (Cargo) → 795 pos → 2 atracação(ões) → N/A
+[18/43] SAO PAULO EXPRESS (Cargo) → 714 pos → 1 atracação(ões) → N/A
+[19/43] MAERSK VENEZIA (Cargo) → 1104 pos → 3 atracação(ões) → N/A
+[20/43] CMA CGM VERACRUZ (Cargo - Hazard A (Major)) → 993 pos → 2 atracação(ões) → N/A
+
+  💳 Créditos: 1,201 | Restantes: 15,738
+
+[21/43] JANE (Tanker) → 745 pos → 1 atracação(ões) → N/A
+[22/43] BOW CHAIN (Tanker - Hazard B) → 706 pos → 1 atracação(ões) → N/A
+[23/43] SAGA JOURNEY (Cargo) → 777 pos → 1 atracação(ões) → N/A
+[24/43] MSC HORTENSE (Cargo) → 1448 pos → 1 atracação(ões) → N/A
+[25/43] VORIAS (Tanker) → 1171 pos → 2 atracação(ões) → ~712h
+[26/43] QUEEN OF DORIA (Tanker) → 986 pos → 1 atracação(ões) → N/A
+[27/43] GREEN ITAJAI (Cargo) → 1215 pos → 1 atracação(ões) → ~704h
+[28/43] GCL HAZIRA (Cargo) → 970 pos → Nenhuma atracação
+[29/43] IONIC KALLIRHOE (Cargo) → 841 pos → 1 atracação(ões) → ~610h
+[30/43] BRYANT (Cargo) → 903 pos → 1 atracação(ões) → N/A
+
+  💳 Créditos: 1,801 | Restantes: 15,138
+
+[31/43] BLUE IONIAN (Cargo) → 858 pos → 2 atracação(ões) → ~581h
+[32/43] HOEGH GIANT (Tanker) → 1320 pos → Nenhuma atracação
+[33/43] FORTUNE LEGACY (Cargo) → 643 pos → 3 atracação(ões) → ~710h
+[34/43] MEDUSA (Cargo) → 806 pos → 1 atracação(ões) → ~608h
+[35/43] ARTVIN (Cargo) → 820 pos → 1 atracação(ões) → ~674h
+[36/43] ORANGE SEA (Cargo) → 491 pos → 1 atracação(ões) → ~683h
+[37/43] HMM CLOVER (Cargo) → 670 pos → Nenhuma atracação
+[38/43] BLOEMGRACHT (Cargo) → 1272 pos → 2 atracação(ões) → N/A
+[39/43] DSI POLARIS (Cargo) → 914 pos → 1 atracação(ões) → ~538h
+[40/43] SANTA BRISA (Cargo) → 272 pos → 1 atracação(ões) → ~433h
+
+  💳 Créditos: 2,401 | Restantes: 14,538
+
+[41/43] APOGEE ENDEAVOUR (Cargo) → 1226 pos → 1 atracação(ões) → ~474h
+[42/43] SEA1 ATLAS (Cargo) → 1034 pos → 4 atracação(ões) → ~588h
+[43/43] LAEM CHABANG EXPRESS (Cargo) → 1073 pos → Nenhuma atracação
+
+----------------------------------------------------------------------
+RESUMO - Santos
+----------------------------------------------------------------------
+Navios processados: 43/43
+Atracações detectadas: 57
+Erros: 0
+💳 Créditos usados (este porto): 2,580
+💳 Créditos acumulados: 2,581
+💰 Créditos restantes: 14,358
+
+======================================================================
+PROCESSANDO: PARANAGUÁ
+======================================================================
+
+📡 Buscando navios atuais...
+✅ Total de navios: 55
+🎯 Cargo/Tanker com IMO: 20
+💳 Estimativa: 1,200 créditos
+
+📊 Tipos de navios relevantes encontrados:
+   Cargo: 13
+   Cargo - Hazard A (Major): 2
+   Tanker: 4
+   Tanker - Hazard B: 1
+
+🚢 Processando 20 navios (60 dias cada)...
+
+[1/20] CAPE (Cargo) → 663 pos → 1 atracação(ões) → N/A
+[2/20] EMMANOUIL (Cargo) → 881 pos → 1 atracação(ões) → ~679h
+[3/20] FENG HUANG FENG (Cargo) → 734 pos → 2 atracação(ões) → ~715h
+[4/20] PANAGIA FORCE (Cargo) → 710 pos → 1 atracação(ões) → ~695h
+[5/20] WL PALEKH (Cargo) → 357 pos → Nenhuma atracação
+[6/20] CHRISTIANNA (Cargo) → 352 pos → 1 atracação(ões) → ~683h
+[7/20] AK HALIMA (Cargo) → 908 pos → 1 atracação(ões) → ~654h
+[8/20] NIKI (Cargo) → 824 pos → 1 atracação(ões) → ~367h
+[9/20] TALIMEN (Cargo) → 1307 pos → 2 atracação(ões) → ~717h
+[10/20] SANTA LINEA (Cargo - Hazard A (Major)) → 715 pos → 1 atracação(ões) → N/A
+
+  💳 Créditos: 3,182 | Restantes: 13,757
+
+[11/20] CMA CGM LISA MARIE (Cargo - Hazard A (Major)) → 1177 pos → 1 atracação(ões) → N/A
+[12/20] HORIZON THEANO (Tanker) → 1267 pos → 1 atracação(ões) → N/A
+[13/20] BOW GLORY (Tanker) → 1072 pos → 1 atracação(ões) → N/A
+[14/20] PM DUKE (Tanker) → 605 pos → 1 atracação(ões) → ~694h
+[15/20] MANOUSOS P (Cargo) → 390 pos → 1 atracação(ões) → ~650h
+[16/20] GOODWOOD (Cargo) → 991 pos → Nenhuma atracação
+[17/20] BOW CAROLINE (Tanker - Hazard B) → 1057 pos → Nenhuma atracação
+[18/20] STI DUCHESSA (Tanker) → 760 pos → 1 atracação(ões) → ~657h
+[19/20] BBG BEIHAI (Cargo) → 930 pos → 1 atracação(ões) → N/A
+[20/20] TRUONGMINH DREAM 05 (Cargo) → 1085 pos → Nenhuma atracação
+
+  💳 Créditos: 3,782 | Restantes: 13,157
+
+
+----------------------------------------------------------------------
+RESUMO - Paranaguá
+----------------------------------------------------------------------
+Navios processados: 20/20
+Atracações detectadas: 18
+Erros: 0
+💳 Créditos usados (este porto): 1,200
+💳 Créditos acumulados: 3,782
+💰 Créditos restantes: 13,157
+
+======================================================================
+PROCESSANDO: RIO GRANDE
+======================================================================
+
+📡 Buscando navios atuais...
+✅ Total de navios: 37
+🎯 Cargo/Tanker com IMO: 7
+💳 Estimativa: 420 créditos
+
+📊 Tipos de navios relevantes encontrados:
+   Cargo: 3
+   Cargo - Hazard C (Minor): 1
+   Tanker: 3
+
+🚢 Processando 7 navios (60 dias cada)...
+
+[1/7] MAITACA ARROW (Cargo) → 1396 pos → 1 atracação(ões) → ~688h
+[2/7] LOWLANDS FREEDOM (Cargo) → 1140 pos → 2 atracação(ões) → ~591h
+[3/7] SERRA NEVADA (Tanker) → 759 pos → 30 atracação(ões) → ~714h
+[4/7] BASTOS I (Tanker) → 1153 pos → 3 atracação(ões) → ~705h
+[5/7] JAKARTA (Tanker) → 1254 pos → 1 atracação(ões) → N/A
+[6/7] PRIGIPOS (Cargo) → 613 pos → 1 atracação(ões) → ~699h
+[7/7] MOL EARNEST (Cargo - Hazard C (Minor)) → 610 pos → 1 atracação(ões) → N/A
+
+----------------------------------------------------------------------
+RESUMO - Rio Grande
+----------------------------------------------------------------------
+Navios processados: 7/7
+Atracações detectadas: 39
+Erros: 0
+💳 Créditos usados (este porto): 420
+💳 Créditos acumulados: 4,203
+💰 Créditos restantes: 12,736
+
+======================================================================
+RESULTADOS FINAIS - TODOS OS PORTOS
+======================================================================
+
+📊 Estatísticas Gerais:
+   Total de atracações: 114
+   Portos: 3
+   Navios únicos: 61
+
+🚢 Atracações por porto:
+   Santos: 57
+   Rio Grande: 39
+   Paranaguá: 18
+
+📦 Atracações por tipo:
+   Cargo: 59
+   Tanker: 47
+   Cargo - Hazard A (Major): 4
+   Tanker - Hazard B: 3
+   Cargo - Hazard C (Minor): 1
+
+⏱️  Tempo de Espera:
+   Registros válidos: 90/114 (78.9%)
+   Média: 486.1h (20.3 dias)
+   Mediana: 533.7h (22.2 dias)
+   Mín: 34.2h (1.4 dias)
+   Máx: 719.4h (30.0 dias)
+   Desvio: 195.7h
+
+💳 Créditos:
+   Usados nesta coleta: 1,142  (Itaqui anterior: 3.061)
+   Total acumulado: 4,203 / 20.000
+   Restantes: 15,797
+
+💾 Dados salvos:
+   data/ais/main_ports_60d.parquet (11.3 KB)
+   data/ais/main_ports_60d.csv (10.9 KB)
+
+📋 Amostra (10 primeiros):
+ porto                name   type        berthing_time  waiting_time_hours
+Santos           ALCYONE I  Cargo 2026-01-28T16:19:00Z                 NaN
+Santos          GREAT HOPE  Cargo 2026-01-27T16:10:00Z          700.133333
+Santos      UNITY EXPLORER  Cargo 2026-01-27T20:40:00Z          719.433333
+Santos GRANDE BUENOS AIRES  Cargo 2026-01-28T04:39:00Z                 NaN
+Santos             MAIRINI  Cargo 2026-01-28T06:44:00Z                 NaN
+Santos      SANTA ANGELINA  Cargo 2026-01-21T11:40:00Z          566.483333
+Santos      SANTA ANGELINA  Cargo 2026-01-23T18:45:00Z          621.566667
+Santos      SANTA ANGELINA  Cargo 2026-01-26T20:42:00Z          695.516667
+Santos         SERRA POLAR Tanker 2026-01-16T19:48:00Z          453.466667
+Santos         SERRA POLAR Tanker 2026-01-17T01:15:00Z          458.916667
+
+======================================================================
+PRÓXIMOS PASSOS
+======================================================================
+
+✅ Dados de 3 portos principais coletados!
+📊 Total: 114 atracações
+💳 Créditos restantes: 15,797
+
+💡 Agora você pode:
+   1. Combinar com dados de Itaqui
+   2. Preprocessar para treino
+   3. Treinar modelos light reais
+   4. Substituir modelos mock
+======================================================================

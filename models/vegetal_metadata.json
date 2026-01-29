@@ -54,11 +54,20 @@
     "chuva_acumulada_ultimos_3dias"
   ],
   "target": "tempo_espera_horas",
-  "trained_at": "2026-01-23T12:29:48Z",
+  "trained_at": "2026-01-29T09:16:01.598523",
   "artifacts": {
-    "lgb_reg": "vegetal_lgb_reg.pkl",
-    "lgb_clf": "vegetal_lgb_clf.pkl",
-    "xgb_reg": "vegetal_xgb_reg.pkl",
-    "ensemble_reg": "vegetal_ensemble_reg.pkl"
+    "lgb_reg": "vegetal_lgb_reg_REAL.pkl",
+    "xgb_reg": "vegetal_xgb_reg_REAL.pkl",
+    "lgb_clf": "vegetal_lgb_clf_REAL.pkl",
+    "ensemble_reg": "vegetal_ensemble_reg_REAL.pkl"
+  },
+  "data_source": "datalastic_ais_enriched",
+  "is_mock": false,
+  "num_samples": 194,
+  "metrics": {
+    "test_mae": 8.72716193497343,
+    "test_r2": 0.9970060237743558,
+    "test_acc": 1.0,
+    "passed": true
   }
 }

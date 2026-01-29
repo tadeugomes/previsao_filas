@@ -1,0 +1,206 @@
+
+
+
+======================================================================
+TREINAMENTO DE MODELOS COMPLETOS COM DADOS AIS REAIS
+======================================================================
+
+======================================================================
+ENRIQUECIMENTO DO DATASET AIS COM FEATURES COMPLETAS
+======================================================================
+
+Carregando data/ais/complete_dataset.parquet...
+✓ Carregado: 308 eventos
+
+✓ Eventos com waiting_time válido: 270
+
+Adicionando features temporais...
+Adicionando features básicas (terminal, carga)...
+Adicionando features históricas (fila, tempo médio)...
+Adicionando features climáticas...
+Adicionando features de maré...
+Adicionando features agrícolas...
+Adicionando features AIS adicionais...
+
+✓ Dataset enriquecido: 270 eventos x 63 features
+
+✓ Salvo em: data/ais/complete_dataset_enriched.parquet
+
+
+######################################################################
+# VEGETAL
+######################################################################
+
+  Dataset VEGETAL: 194 eventos
+  Codificando features categóricas...
+    nome_porto (str): 6 valores únicos
+    nome_terminal (str): 17 valores únicos
+    tipo_navegacao (str): 2 valores únicos
+    tipo_carga (str): 1 valores únicos
+    natureza_carga (str): 4 valores únicos
+    cdmercadoria (str): 4 valores únicos
+    stsh4 (str): 4 valores únicos
+  Debug - dtypes antes de conversão:
+  ✓ Todas as 51 features convertidas para float64
+  Features: 51
+  Samples válidos: 194
+
+======================================================================
+TREINANDO MODELOS COMPLETOS - VEGETAL
+======================================================================
+
+Amostras:
+  Train: 135
+  Val:   29
+  Test:  30
+
+Treinando LightGBM Regressor...
+  Val MAE:  17.85h
+  Test MAE: 11.93h
+  Test R²:  0.995
+
+Treinando XGBoost Regressor...
+  Val MAE:  7.50h
+  Test MAE: 7.93h
+  Test R²:  0.997
+
+Criando Ensemble...
+  Val MAE:  10.72h
+  Test MAE: 8.73h
+  Test R²:  0.997
+
+Treinando LightGBM Classifier...
+  Test Accuracy: 1.000
+
+======================================================================
+RESULTADOS FINAIS
+======================================================================
+
+Modelo Completo - VEGETAL
+  Melhor regressor: XGB
+  Test MAE: 7.93h
+  Test R²:  0.997
+  Test Accuracy: 1.000
+
+✅ MODELO APROVADO!
+
+✓ Modelos salvos:
+  models/vegetal_lgb_reg_REAL.pkl
+  models/vegetal_xgb_reg_REAL.pkl
+  models/vegetal_lgb_clf_REAL.pkl
+  models/vegetal_metadata.json
+
+
+######################################################################
+# MINERAL
+######################################################################
+
+  Dataset MINERAL: 15 eventos
+  Codificando features categóricas...
+    nome_porto (str): 2 valores únicos
+    nome_terminal (str): 6 valores únicos
+    tipo_navegacao (str): 2 valores únicos
+    tipo_carga (str): 1 valores únicos
+    natureza_carga (str): 4 valores únicos
+    cdmercadoria (str): 4 valores únicos
+    stsh4 (str): 4 valores únicos
+  Debug - dtypes antes de conversão:
+  ✓ Todas as 35 features convertidas para float64
+  Features: 35
+  Samples válidos: 15
+⚠️  Dados insuficientes para MINERAL (15 amostras)
+   Mínimo necessário: 30 amostras
+
+######################################################################
+# FERTILIZANTE
+######################################################################
+
+  Dataset FERTILIZANTE: 61 eventos
+  Codificando features categóricas...
+    nome_porto (str): 6 valores únicos
+    nome_terminal (str): 16 valores únicos
+    tipo_navegacao (str): 2 valores únicos
+    tipo_carga (str): 1 valores únicos
+    natureza_carga (str): 4 valores únicos
+    cdmercadoria (str): 4 valores únicos
+    stsh4 (str): 4 valores únicos
+  Debug - dtypes antes de conversão:
+  ✓ Todas as 35 features convertidas para float64
+  Features: 35
+  Samples válidos: 61
+
+======================================================================
+TREINANDO MODELOS COMPLETOS - FERTILIZANTE
+======================================================================
+
+Amostras:
+  Train: 42
+  Val:   9
+  Test:  10
+
+Treinando LightGBM Regressor...
+  Val MAE:  108.44h
+  Test MAE: 100.84h
+  Test R²:  0.447
+
+Treinando XGBoost Regressor...
+  Val MAE:  64.59h
+  Test MAE: 58.24h
+  Test R²:  0.560
+
+Criando Ensemble...
+  Val MAE:  81.68h
+  Test MAE: 72.62h
+  Test R²:  0.532
+
+Treinando LightGBM Classifier...
+  Test Accuracy: 0.900
+
+======================================================================
+RESULTADOS FINAIS
+======================================================================
+
+Modelo Completo - FERTILIZANTE
+  Melhor regressor: XGB
+  Test MAE: 58.24h
+  Test R²:  0.560
+  Test Accuracy: 0.900
+
+⚠️  Modelo funcional mas abaixo dos critérios ideais
+
+✓ Modelos salvos:
+  models/fertilizante_lgb_reg_REAL.pkl
+  models/fertilizante_xgb_reg_REAL.pkl
+  models/fertilizante_lgb_clf_REAL.pkl
+  models/fertilizante_metadata.json
+
+
+======================================================================
+COMPARAÇÃO: MODELOS COMPLETOS vs LIGHT
+======================================================================
+
+VEGETAL:
+  LIGHT (15 features):
+    MAE: 19.00h
+    R²:  0.982
+  COMPLETO (35-51 features):
+    MAE: 8.73h
+    R²:  0.997
+  Melhoria:
+    ΔMAE: +10.27h (-54.1%)
+    ΔR²:  +0.015 (+1.5%)
+
+FERTILIZANTE:
+  LIGHT (15 features):
+    MAE: 60.29h
+    R²:  0.838
+  COMPLETO (35-51 features):
+    MAE: 72.62h
+    R²:  0.532
+  Melhoria:
+    ΔMAE: -12.33h (+20.4%)
+    ΔR²:  -0.307 (-36.6%)
+
+======================================================================
+✅ TREINAMENTO COMPLETO!
+======================================================================

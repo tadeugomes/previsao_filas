@@ -38,11 +38,20 @@
     "indice_pressao_milho"
   ],
   "target": "tempo_espera_horas",
-  "trained_at": "2026-01-18T16:02:22Z",
+  "trained_at": "2026-01-29T09:16:02.339733",
   "artifacts": {
-    "lgb_reg": "fertilizante_lgb_reg.pkl",
-    "lgb_clf": "fertilizante_lgb_clf.pkl",
-    "xgb_reg": "fertilizante_xgb_reg.pkl",
-    "ensemble_reg": "fertilizante_ensemble_reg.pkl"
+    "lgb_reg": "fertilizante_lgb_reg_REAL.pkl",
+    "xgb_reg": "fertilizante_xgb_reg_REAL.pkl",
+    "lgb_clf": "fertilizante_lgb_clf_REAL.pkl",
+    "ensemble_reg": "fertilizante_ensemble_reg_REAL.pkl"
+  },
+  "data_source": "datalastic_ais_enriched",
+  "is_mock": false,
+  "num_samples": 61,
+  "metrics": {
+    "test_mae": 72.6192242429095,
+    "test_r2": 0.5315730773273706,
+    "test_acc": 0.9,
+    "passed": false
   }
 }
