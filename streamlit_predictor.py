@@ -199,6 +199,50 @@ with tab1:
             help="Tipo de carga (ajuda a identificar o perfil)"
         )
 
+        # ===== NOVO: SELEÇÃO DE PERFIL =====
+        st.markdown("---")
+
+        # Inferir perfil automaticamente
+        perfil_inferido = predictor.inferir_perfil(tipo_navio, natureza_carga, porto)
+
+        perfil_selecionado = st.selectbox(
+            "Perfil do Modelo *",
+            options=["VEGETAL", "MINERAL", "FERTILIZANTE"],
+            index=["VEGETAL", "MINERAL", "FERTILIZANTE"].index(perfil_inferido),
+            help=f"Modelo a usar na previsão. Inferido automaticamente: {perfil_inferido}"
+        )
+
+        # Mostrar alerta se usuário mudou o perfil
+        if perfil_selecionado != perfil_inferido:
+            st.info(f"ℹ️ Perfil alterado: {perfil_inferido} → **{perfil_selecionado}**")
+
+        # Mostrar info do perfil selecionado
+        if predictor.models[perfil_selecionado]["has_complete"]:
+            complete_meta = predictor.models[perfil_selecionado]["complete_meta"]
+            light_meta = predictor.models[perfil_selecionado]["light_meta"]
+
+            with st.expander(f"ℹ️ Info do Modelo {perfil_selecionado}"):
+                st.markdown(f"""
+                **Modelo Complete ({len(complete_meta['features'])} features)**
+                - MAE: {complete_meta['metrics']['test_mae']:.1f}h
+                - R²: {complete_meta['metrics']['test_r2']:.3f}
+
+                **Modelo Light (15 features)**
+                - MAE: {light_meta['metrics']['test_mae']:.1f}h
+                - R²: {light_meta['metrics']['test_r2']:.3f}
+                """)
+        else:
+            light_meta = predictor.models[perfil_selecionado]["light_meta"]
+            with st.expander(f"ℹ️ Info do Modelo {perfil_selecionado}"):
+                st.markdown(f"""
+                **Modelo Light (15 features)**
+                - MAE: {light_meta['metrics']['test_mae']:.1f}h
+                - R²: {light_meta['metrics']['test_r2']:.3f}
+
+                ⚠️ Modelo complete não disponível
+                """)
+        # ===== FIM: SELEÇÃO DE PERFIL =====
+
     with col2:
         st.subheader("Características Técnicas")
 
@@ -256,6 +300,7 @@ with tab1:
                 "dwt": dwt,
                 "calado": calado,
                 "toneladas": toneladas,
+                "perfil": perfil_selecionado,  # ===== NOVO: passar perfil selecionado =====
             }
 
             # Converter força de modelo
@@ -312,8 +357,14 @@ with tab1:
                 with col1:
                     st.markdown("### 🔧 Detalhes Técnicos")
 
+                    # Destacar se perfil foi alterado manualmente
+                    perfil_info = resultado['perfil']
+                    if perfil_selecionado != perfil_inferido:
+                        perfil_info = f"{resultado['perfil']} <span style='color: orange;'>(Alterado Manualmente)</span>"
+
                     details_html = f"""
                     <div class="metric-card">
+                        <strong>Perfil do Modelo:</strong> {perfil_info}<br>
                         <strong>Modelo Usado:</strong> {resultado['modelo_usado'].upper()}<br>
                         <strong>Features Calculadas:</strong> {resultado['features_calculadas']}<br>
                         <strong>Porto:</strong> {resultado['porto']}<br>
@@ -381,7 +432,10 @@ with tab2:
         "dwt": [75000, 45000],
         "calado": [12.5, 10.0],
         "toneladas": [60000, 35000],
+        "perfil": ["VEGETAL", "FERTILIZANTE"],  # ===== NOVO: coluna perfil (opcional) =====
     })
+
+    st.info("ℹ️ A coluna **'perfil'** é opcional. Se não fornecida, o sistema infere automaticamente baseado em tipo e carga.")
 
     st.dataframe(template_df, use_container_width=True)
 
@@ -440,6 +494,10 @@ with tab2:
                         "calado": float(row.get("calado", 12.5)),
                         "toneladas": float(row.get("toneladas", 50000)),
                     }
+
+                    # ===== NOVO: adicionar perfil se fornecido =====
+                    if "perfil" in row and pd.notna(row["perfil"]):
+                        navio_data["perfil"] = row["perfil"]
 
                     # Fazer previsão
                     try:

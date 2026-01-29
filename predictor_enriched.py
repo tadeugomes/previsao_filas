@@ -343,6 +343,7 @@ class EnrichedPredictor:
 
         Args:
             navio_data: Dict com dados básicos (porto, tipo, carga, eta, dwt, calado)
+                - Pode incluir "perfil" para forçar um perfil específico
             use_complete_model: Se True, gera features para modelo completo (35-51)
 
         Returns:
@@ -359,8 +360,10 @@ class EnrichedPredictor:
         calado = navio_data.get("calado", 12.5)
         toneladas = navio_data.get("toneladas", 50000)
 
-        # Inferir perfil
-        perfil = self.inferir_perfil(tipo_navio, natureza_carga, porto)
+        # Perfil: usar o fornecido ou inferir automaticamente
+        perfil = navio_data.get("perfil")
+        if not perfil:
+            perfil = self.inferir_perfil(tipo_navio, natureza_carga, porto)
 
         # ===== FEATURES BÁSICAS =====
         features["nome_porto"] = porto
@@ -522,6 +525,8 @@ class EnrichedPredictor:
                 - dwt: float (opcional)
                 - calado: float (opcional)
                 - toneladas: float (opcional)
+                - perfil: str (opcional) - "VEGETAL", "MINERAL" ou "FERTILIZANTE"
+                    Se fornecido, usa este perfil ao invés de inferir
             quality_score: Score de qualidade dos dados (0-1)
             force_model: "complete" ou "light" para forçar uso de modelo específico
 
@@ -535,7 +540,7 @@ class EnrichedPredictor:
                 - modelo_usado: str
                 - features_calculadas: int
         """
-        # 1. Enriquecer features e inferir perfil
+        # 1. Enriquecer features (perfil será obtido do navio_data ou inferido)
         features, perfil = self.enrich_features(navio_data, use_complete_model=False)
 
         # 2. Decidir qual modelo usar
