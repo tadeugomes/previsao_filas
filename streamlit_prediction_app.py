@@ -26,6 +26,9 @@ except ImportError:
     st.error("❌ Erro ao importar predictor_enriched.py")
     st.stop()
 
+# Importar Path para manipulação de arquivos
+LINEUP_HISTORY_PATH = Path("lineups_previstos/lineup_history.parquet")
+
 
 # ============================================================================
 # CONFIGURAÇÃO DA PÁGINA
@@ -122,8 +125,100 @@ def get_categoria_color(categoria_index):
     return colors.get(categoria_index, "#6c757d")
 
 
-def show_prediction_card(resultado):
-    """Mostra card com resultado da previsão."""
+def buscar_navio_por_imo(imo, predictor):
+    """
+    Busca informações do navio no lineup_history por IMO.
+
+    Args:
+        imo: Código IMO do navio (pode ser string ou número)
+        predictor: Instância do EnrichedPredictor com lineup_history carregado
+
+    Returns:
+        Dict com informações do navio ou None se não encontrado
+    """
+    if not imo or predictor.lineup_history.empty:
+        return None
+
+    try:
+        # Converter IMO para string e limpar
+        imo_str = str(imo).strip()
+
+        # Verificar se existe coluna IMO no lineup_history
+        imo_cols = [col for col in predictor.lineup_history.columns if 'imo' in col.lower()]
+
+        if not imo_cols:
+            return None
+
+        imo_col = imo_cols[0]
+
+        # Buscar navio por IMO
+        df = predictor.lineup_history.copy()
+        df[imo_col] = df[imo_col].astype(str).str.strip()
+
+        navio_rows = df[df[imo_col] == imo_str]
+
+        if navio_rows.empty:
+            return None
+
+        # Pegar o registro mais recente
+        if 'prev_chegada' in navio_rows.columns:
+            navio_rows = navio_rows.sort_values('prev_chegada', ascending=False)
+
+        navio = navio_rows.iloc[0]
+
+        # Extrair informações relevantes
+        resultado = {
+            'imo': imo_str,
+            'encontrado': True
+        }
+
+        # ETA do lineup
+        if 'prev_chegada' in navio_rows.columns:
+            eta_lineup = pd.to_datetime(navio['prev_chegada'], errors='coerce')
+            if pd.notna(eta_lineup):
+                resultado['eta_lineup'] = eta_lineup
+                resultado['eta_lineup_str'] = eta_lineup.strftime('%Y-%m-%d %H:%M')
+
+        # Nome do navio
+        nome_cols = [col for col in navio_rows.columns if 'navio' in col.lower() or 'nome' in col.lower()]
+        if nome_cols:
+            resultado['nome_navio'] = str(navio[nome_cols[0]])
+
+        # Porto
+        if 'nome_porto' in navio_rows.columns:
+            resultado['porto'] = str(navio['nome_porto'])
+        elif 'porto' in navio_rows.columns:
+            resultado['porto'] = str(navio['porto'])
+
+        # DWT
+        if 'dwt' in navio_rows.columns:
+            resultado['dwt'] = float(navio['dwt']) if pd.notna(navio['dwt']) else None
+
+        # Tipo de navio
+        tipo_cols = [col for col in navio_rows.columns if 'tipo' in col.lower()]
+        if tipo_cols:
+            resultado['tipo_navio'] = str(navio[tipo_cols[0]])
+
+        # Carga
+        carga_cols = [col for col in navio_rows.columns if 'carga' in col.lower() or 'produto' in col.lower()]
+        if carga_cols:
+            resultado['carga'] = str(navio[carga_cols[0]])
+
+        return resultado
+
+    except Exception as e:
+        st.warning(f"⚠️ Erro ao buscar navio por IMO: {e}")
+        return None
+
+
+def show_prediction_card(resultado, lineup_info=None):
+    """
+    Mostra card com resultado da previsão.
+
+    Args:
+        resultado: Dict com resultado da previsão do modelo
+        lineup_info: Dict com informações do lineup (opcional, obtido via IMO)
+    """
     st.markdown("### 📊 Resultado da Previsão")
 
     # Métricas principais
@@ -188,6 +283,121 @@ def show_prediction_card(resultado):
         modelo_icon = "🎯" if resultado['modelo_usado'] == "complete" else "⚡"
         modelo_label = "Completo (51 features)" if resultado['modelo_usado'] == "complete" else "Light (15 features)"
         st.metric(f"{modelo_icon} Modelo", modelo_label)
+
+    # Comparação com lineup (se disponível)
+    if lineup_info and lineup_info.get('eta_lineup'):
+        st.markdown("---")
+        st.markdown("### 🔄 Comparação: Lineup vs Previsão do Modelo")
+
+        # Calcular ETA previsto (ETA lineup + tempo de espera)
+        eta_lineup = lineup_info['eta_lineup']
+        tempo_espera_horas = resultado['tempo_espera_previsto_horas']
+        eta_previsto = eta_lineup + pd.Timedelta(hours=tempo_espera_horas)
+
+        # Calcular atraso/antecipação
+        delta_horas = (eta_previsto - eta_lineup).total_seconds() / 3600
+        delta_dias = delta_horas / 24
+
+        # Determinar cor do delta
+        if delta_horas < 24:  # Menos de 1 dia
+            delta_color = "#28a745"  # Verde
+            delta_icon = "✅"
+            delta_msg = "Atracação rápida"
+        elif delta_horas < 168:  # Menos de 7 dias
+            delta_color = "#ffc107"  # Amarelo
+            delta_icon = "⚠️"
+            delta_msg = "Atraso moderado"
+        else:
+            delta_color = "#dc3545"  # Vermelho
+            delta_icon = "🚨"
+            delta_msg = "Atraso significativo"
+
+        # Criar colunas para comparação
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.markdown(
+                f"""
+                <div class="info-box" style="background-color: #e3f2fd; border-color: #2196f3;">
+                    <div style="font-size: 0.9rem; color: #666; margin-bottom: 0.5rem;">
+                        📋 <strong>ETA do Lineup</strong>
+                    </div>
+                    <div style="font-size: 1.3rem; font-weight: bold; color: #2196f3;">
+                        {eta_lineup.strftime('%d/%m/%Y %H:%M')}
+                    </div>
+                    <div style="font-size: 0.8rem; color: #666; margin-top: 0.3rem;">
+                        Plano original do porto
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with col2:
+            st.markdown(
+                f"""
+                <div class="warning-box" style="background-color: #fff3e0; border-color: {delta_color};">
+                    <div style="font-size: 0.9rem; color: #666; margin-bottom: 0.5rem;">
+                        🔮 <strong>ETA Previsto (com espera)</strong>
+                    </div>
+                    <div style="font-size: 1.3rem; font-weight: bold; color: {delta_color};">
+                        {eta_previsto.strftime('%d/%m/%Y %H:%M')}
+                    </div>
+                    <div style="font-size: 0.8rem; color: #666; margin-top: 0.3rem;">
+                        Previsão do modelo
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with col3:
+            st.markdown(
+                f"""
+                <div class="success-box" style="background-color: #f5f5f5; border-color: {delta_color};">
+                    <div style="font-size: 0.9rem; color: #666; margin-bottom: 0.5rem;">
+                        {delta_icon} <strong>Diferença</strong>
+                    </div>
+                    <div style="font-size: 1.3rem; font-weight: bold; color: {delta_color};">
+                        +{format_hours_to_days(delta_horas)}
+                    </div>
+                    <div style="font-size: 0.8rem; color: #666; margin-top: 0.3rem;">
+                        {delta_msg}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # Explicação adicional
+        st.markdown(
+            f"""
+            <div class="info-box">
+                <strong>ℹ️ Interpretação:</strong><br>
+                O navio está no lineup com ETA de <strong>{eta_lineup.strftime('%d/%m/%Y às %H:%M')}</strong>.
+                Com base nas condições atuais, o modelo prevê que a atracação real ocorrerá em
+                <strong>{eta_previsto.strftime('%d/%m/%Y às %H:%M')}</strong>,
+                resultando em um atraso de <strong style="color: {delta_color};">
+                {delta_dias:.1f} dias ({delta_horas:.0f} horas)</strong> em relação ao planejado.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # Mostrar informações do navio do lineup (se disponível)
+        if lineup_info.get('nome_navio'):
+            with st.expander("ℹ️ Informações do Lineup", expanded=False):
+                info_cols = st.columns(2)
+
+                with info_cols[0]:
+                    st.markdown(f"**Navio:** {lineup_info.get('nome_navio', 'N/A')}")
+                    st.markdown(f"**IMO:** {lineup_info.get('imo', 'N/A')}")
+                    st.markdown(f"**Porto:** {lineup_info.get('porto', 'N/A')}")
+
+                with info_cols[1]:
+                    st.markdown(f"**Tipo:** {lineup_info.get('tipo_navio', 'N/A')}")
+                    st.markdown(f"**Carga:** {lineup_info.get('carga', 'N/A')}")
+                    st.markdown(f"**DWT:** {lineup_info.get('dwt', 'N/A')}")
 
 
 # ============================================================================
@@ -273,6 +483,32 @@ def main():
 
     if modo_entrada == "📝 Entrada Manual":
         st.markdown("## Dados do Navio")
+
+        # Campo IMO (opcional)
+        imo_input = st.text_input(
+            "🔍 IMO do Navio (opcional)",
+            value="",
+            max_chars=10,
+            help="Código IMO do navio. Se preenchido, buscaremos o navio no lineup para comparar ETAs.",
+            placeholder="Ex: 9123456"
+        )
+
+        # Buscar navio no lineup se IMO foi fornecido
+        lineup_info = None
+        if imo_input:
+            with st.spinner(f"Buscando navio IMO {imo_input} no lineup..."):
+                lineup_info = buscar_navio_por_imo(imo_input, predictor)
+
+            if lineup_info:
+                st.success(f"✅ Navio encontrado no lineup: {lineup_info.get('nome_navio', 'N/A')}")
+
+                # Preencher campos automaticamente se disponível
+                if lineup_info.get('eta_lineup'):
+                    st.info(f"📋 ETA do Lineup: {lineup_info['eta_lineup_str']}")
+            else:
+                st.warning(f"⚠️ Navio IMO {imo_input} não encontrado no lineup histórico. Você pode continuar com entrada manual.")
+
+        st.markdown("---")
 
         col1, col2 = st.columns(2)
 
@@ -376,7 +612,7 @@ def main():
 
                     # Mostrar resultado
                     st.success("✅ Previsão concluída com sucesso!")
-                    show_prediction_card(resultado)
+                    show_prediction_card(resultado, lineup_info)
 
                     # Mostrar features calculadas
                     if show_features:
@@ -423,6 +659,7 @@ def main():
             <div class="info-box">
             <strong>ℹ️ Formato do CSV:</strong><br>
             O arquivo deve conter as seguintes colunas:<br>
+            - <code>imo</code> (opcional): Código IMO do navio para buscar no lineup<br>
             - <code>porto</code> (obrigatório): Nome do porto<br>
             - <code>tipo</code>: Tipo de navio<br>
             - <code>carga</code>: Natureza da carga<br>
@@ -440,6 +677,7 @@ def main():
 
         with col2:
             template_df = pd.DataFrame({
+                "imo": ["9123456", "9234567"],
                 "porto": ["Santos", "Paranaguá"],
                 "tipo": ["Bulk Carrier", "Tanker"],
                 "carga": ["Soja em Graos", "Ureia"],
@@ -497,6 +735,11 @@ def main():
                         progress_bar.progress(progress)
                         status_text.text(f"Processando navio {idx + 1}/{len(df)}...")
 
+                        # Buscar informações do lineup por IMO (se disponível)
+                        lineup_info = None
+                        if 'imo' in row and pd.notna(row['imo']) and row['imo']:
+                            lineup_info = buscar_navio_por_imo(row['imo'], predictor)
+
                         # Preparar dados
                         navio_data = {
                             "porto": row["porto"],
@@ -515,6 +758,27 @@ def main():
                                 quality_score=quality_score,
                                 force_model=force_model_param,
                             )
+
+                            # Adicionar informações do lineup ao resultado
+                            if lineup_info and lineup_info.get('eta_lineup'):
+                                resultado['imo'] = lineup_info.get('imo', row.get('imo', ''))
+                                resultado['eta_lineup'] = lineup_info['eta_lineup_str']
+
+                                # Calcular ETA previsto e delta
+                                eta_lineup_dt = lineup_info['eta_lineup']
+                                eta_previsto_dt = eta_lineup_dt + pd.Timedelta(hours=resultado['tempo_espera_previsto_horas'])
+                                resultado['eta_previsto'] = eta_previsto_dt.strftime('%Y-%m-%d %H:%M')
+
+                                delta_horas = (eta_previsto_dt - eta_lineup_dt).total_seconds() / 3600
+                                resultado['delta_horas'] = round(delta_horas, 1)
+                                resultado['delta_dias'] = round(delta_horas / 24, 1)
+                            else:
+                                resultado['imo'] = row.get('imo', '')
+                                resultado['eta_lineup'] = ''
+                                resultado['eta_previsto'] = ''
+                                resultado['delta_horas'] = None
+                                resultado['delta_dias'] = None
+
                             resultados.append(resultado)
                         except Exception as e:
                             st.warning(f"⚠️ Erro no navio {idx + 1}: {e}")
@@ -522,6 +786,7 @@ def main():
                                 "erro": str(e),
                                 "porto": navio_data["porto"],
                                 "eta": navio_data["eta"],
+                                "imo": row.get('imo', ''),
                             })
 
                     # Limpar progresso
@@ -567,18 +832,37 @@ def main():
                     # Adicionar formatação
                     df_display = df_results.copy()
                     df_display["tempo_espera_previsto_horas"] = df_display["tempo_espera_previsto_horas"].apply(
-                        lambda x: format_hours_to_days(x)
+                        lambda x: format_hours_to_days(x) if pd.notna(x) else "N/A"
                     )
                     df_display["confianca"] = df_display["confianca"].apply(
-                        lambda x: f"{x*100:.1f}%"
+                        lambda x: f"{x*100:.1f}%" if pd.notna(x) else "N/A"
                     )
 
+                    # Selecionar colunas para exibição
+                    display_cols = ["porto", "eta", "perfil", "tempo_espera_previsto_horas",
+                                    "categoria_fila", "confianca", "modelo_usado"]
+
+                    # Adicionar colunas de comparação se disponíveis
+                    if 'imo' in df_display.columns and df_display['imo'].notna().any():
+                        display_cols.insert(0, "imo")
+
+                    if 'eta_lineup' in df_display.columns and df_display['eta_lineup'].notna().any() and (df_display['eta_lineup'] != '').any():
+                        display_cols.insert(2, "eta_lineup")
+                        display_cols.insert(3, "eta_previsto")
+                        display_cols.insert(4, "delta_dias")
+
+                    # Filtrar apenas colunas que existem
+                    display_cols = [col for col in display_cols if col in df_display.columns]
+
                     st.dataframe(
-                        df_display[[
-                            "porto", "eta", "perfil", "tempo_espera_previsto_horas",
-                            "categoria_fila", "confianca", "modelo_usado"
-                        ]],
-                        use_container_width=True
+                        df_display[display_cols],
+                        use_container_width=True,
+                        column_config={
+                            "imo": st.column_config.TextColumn("IMO", help="Código IMO do navio"),
+                            "eta_lineup": st.column_config.TextColumn("ETA Lineup", help="ETA do lineup original"),
+                            "eta_previsto": st.column_config.TextColumn("ETA Previsto", help="ETA previsto com espera"),
+                            "delta_dias": st.column_config.NumberColumn("Atraso (dias)", help="Diferença em dias entre ETA previsto e lineup", format="%.1f"),
+                        }
                     )
 
                     # Download dos resultados
