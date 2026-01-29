@@ -28,6 +28,53 @@ from sklearn.preprocessing import LabelEncoder
 warnings.filterwarnings("ignore")
 
 # ============================================================================
+# CORES PARA TERMINAL (User-Friendly)
+# ============================================================================
+
+class Colors:
+    """Cores ANSI para terminal - User Friendly"""
+    # Cores básicas
+    GREEN = '\033[92m'      # Sucesso
+    YELLOW = '\033[93m'     # Aviso
+    RED = '\033[91m'        # Erro
+    BLUE = '\033[94m'       # Informação
+    CYAN = '\033[96m'       # Destaque
+    MAGENTA = '\033[95m'    # Especial
+    WHITE = '\033[97m'      # Normal
+    BOLD = '\033[1m'        # Negrito
+    RESET = '\033[0m'       # Reset
+
+    @staticmethod
+    def success(text):
+        """Texto de sucesso (verde)"""
+        return f"{Colors.GREEN}{text}{Colors.RESET}"
+
+    @staticmethod
+    def warning(text):
+        """Texto de aviso (amarelo)"""
+        return f"{Colors.YELLOW}{text}{Colors.RESET}"
+
+    @staticmethod
+    def error(text):
+        """Texto de erro (vermelho)"""
+        return f"{Colors.RED}{text}{Colors.RESET}"
+
+    @staticmethod
+    def info(text):
+        """Texto informativo (azul)"""
+        return f"{Colors.BLUE}{text}{Colors.RESET}"
+
+    @staticmethod
+    def highlight(text):
+        """Texto destacado (ciano)"""
+        return f"{Colors.CYAN}{text}{Colors.RESET}"
+
+    @staticmethod
+    def bold(text):
+        """Texto em negrito"""
+        return f"{Colors.BOLD}{text}{Colors.RESET}"
+
+# ============================================================================
 # CONFIGURAÇÕES
 # ============================================================================
 
@@ -94,9 +141,9 @@ class EnrichedPredictor:
         self.lineup_history = self._load_lineup_history()
         self.porto_stats = self._calculate_porto_stats()
 
-        print("✅ EnrichedPredictor inicializado")
-        print(f"   Modelos carregados: {list(self.models.keys())}")
-        print(f"   Histórico: {len(self.lineup_history)} lineups")
+        print(Colors.success("[OK] EnrichedPredictor inicializado com sucesso"))
+        print(Colors.info(f"   Modelos carregados: {list(self.models.keys())}"))
+        print(Colors.info(f"   Historico de lineups: {len(self.lineup_history)} registros"))
 
     def _load_models(self) -> Dict:
         """Carrega modelos completos e light para cada perfil."""
@@ -154,7 +201,7 @@ class EnrichedPredictor:
                     df['nome_porto'] = df['porto']
                 return df
             except Exception as e:
-                print(f"⚠️ Erro ao carregar lineup_history.parquet: {e}")
+                print(Colors.warning(f"[AVISO] Erro ao carregar lineup_history.parquet: {e}"))
                 return pd.DataFrame()
         else:
             # Retornar DataFrame vazio se não existir
@@ -184,7 +231,7 @@ class EnrichedPredictor:
                 for porto in PORTOS.keys():
                     stats[porto] = {"tempo_medio": 48.0, "count": 0}
         except Exception as e:
-            print(f"⚠️ Erro ao calcular estatísticas de portos: {e}")
+            print(Colors.warning(f"[AVISO] Erro ao calcular estatisticas de portos: {e}"))
             # Valores default em caso de erro
             for porto in PORTOS.keys():
                 stats[porto] = {"tempo_medio": 48.0, "count": 0}
@@ -227,7 +274,7 @@ class EnrichedPredictor:
             }
 
         except Exception as e:
-            print(f"⚠️  Erro ao buscar clima: {e}. Usando valores médios.")
+            print(Colors.warning(f"[AVISO] Erro ao buscar clima: {e}. Usando valores medios."))
             # Fallback: usar médias regionais
             regiao = coords["regiao"]
             mes = data.month
@@ -288,7 +335,7 @@ class EnrichedPredictor:
             return max(1, min(fila_7d, 20))  # Entre 1 e 20 navios
 
         except Exception as e:
-            print(f"⚠️ Erro ao estimar fila histórica: {e}")
+            print(Colors.warning(f"[AVISO] Erro ao estimar fila historica: {e}"))
             return 3  # Fallback
 
     def inferir_perfil(self, tipo_navio: str, natureza_carga: str, porto: str) -> str:
@@ -604,6 +651,101 @@ class EnrichedPredictor:
 
 
 # ============================================================================
+# FUNÇÕES AUXILIARES PARA EXIBIÇÃO AMIGÁVEL
+# ============================================================================
+
+def get_categoria_color(categoria_index: int) -> str:
+    """Retorna a cor apropriada para cada categoria de fila."""
+    colors = {
+        0: Colors.success,  # 0-2 dias (Rápido)
+        1: Colors.info,     # 2-7 dias (Normal)
+        2: Colors.warning,  # 7-14 dias (Longo)
+        3: Colors.error,    # 14+ dias (Muito Longo)
+    }
+    return colors.get(categoria_index, Colors.info)
+
+
+def get_categoria_explicacao(categoria: str) -> str:
+    """Retorna explicação amigável sobre a categoria de fila."""
+    explicacoes = {
+        "0-2 dias (Rápido)": "Fila curta. Atracacao rapida esperada. Situacao favoravel.",
+        "2-7 dias (Normal)": "Tempo de espera dentro da media. Planejamento normal.",
+        "7-14 dias (Longo)": "Fila mais longa que o usual. Recomenda-se planejamento cuidadoso.",
+        "14+ dias (Muito Longo)": "Fila critica. Considere alternativas ou aguarde reducao.",
+    }
+    return explicacoes.get(categoria, "Categoria desconhecida")
+
+
+def format_resultado(resultado: Dict, show_details: bool = True) -> str:
+    """
+    Formata o resultado da previsão de forma amigável ao usuário.
+
+    Args:
+        resultado: Dict retornado pela função predict()
+        show_details: Se True, mostra detalhes técnicos adicionais
+
+    Returns:
+        String formatada com cores e informações explicativas
+    """
+    output = []
+
+    # Cabeçalho
+    output.append("\n" + "=" * 70)
+    output.append(Colors.bold(f"PREVISAO DE FILA PORTUARIA - {resultado['porto'].upper()}"))
+    output.append("=" * 70)
+
+    # Informações do navio
+    output.append(f"\n{Colors.bold('Porto:')} {resultado['porto']}")
+    output.append(f"{Colors.bold('ETA previsto:')} {resultado['eta']}")
+
+    # Resultado principal
+    output.append(f"\n{Colors.bold('TEMPO DE ESPERA PREVISTO:')}")
+    tempo_dias = resultado['tempo_espera_previsto_dias']
+    tempo_horas = resultado['tempo_espera_previsto_horas']
+
+    # Cor baseada na categoria
+    color_func = get_categoria_color(resultado['categoria_index'])
+    output.append(color_func(f"  {tempo_dias:.1f} dias ({tempo_horas:.1f} horas)"))
+
+    # Categoria e explicação
+    categoria = resultado['categoria_fila']
+    output.append(f"\n{Colors.bold('Categoria:')} {color_func(categoria)}")
+    output.append(f"{Colors.bold('Explicacao:')} {get_categoria_explicacao(categoria)}")
+
+    # Confiança
+    confianca = resultado['confianca'] * 100
+    if confianca >= 80:
+        conf_color = Colors.success
+    elif confianca >= 60:
+        conf_color = Colors.info
+    else:
+        conf_color = Colors.warning
+    output.append(f"\n{Colors.bold('Confianca da previsao:')} {conf_color(f'{confianca:.1f}%')}")
+
+    # Detalhes técnicos (opcional)
+    if show_details:
+        output.append(f"\n{Colors.bold('DETALHES TECNICOS:')}")
+        output.append(f"  Perfil de carga: {resultado['perfil']}")
+        output.append(f"  Modelo usado: {resultado['modelo_usado']}")
+        if 'features_calculadas' in resultado:
+            output.append(f"  Features calculadas: {resultado['features_calculadas']}")
+
+    output.append("\n" + "=" * 70)
+
+    return "\n".join(output)
+
+
+def print_legenda_categorias():
+    """Imprime legenda explicativa sobre as categorias de fila."""
+    print("\n" + Colors.bold("LEGENDA DE CATEGORIAS DE FILA:"))
+    print(Colors.success("  0-2 dias (Rapido):") + " Fila curta, atracacao rapida esperada")
+    print(Colors.info("  2-7 dias (Normal):") + " Tempo de espera dentro da media")
+    print(Colors.warning("  7-14 dias (Longo):") + " Fila mais longa, planejamento necessario")
+    print(Colors.error("  14+ dias (Muito Longo):") + " Fila critica, considerar alternativas")
+    print()
+
+
+# ============================================================================
 # EXEMPLO DE USO
 # ============================================================================
 
@@ -613,7 +755,7 @@ if __name__ == "__main__":
     predictor = EnrichedPredictor()
 
     print("\n" + "=" * 70)
-    print("TESTE DE PREDIÇÃO COM ENRIQUECIMENTO AUTOMÁTICO")
+    print(Colors.bold("TESTE DE PREVISAO COM ENRIQUECIMENTO AUTOMATICO"))
     print("=" * 70 + "\n")
 
     # Exemplo 1: Navio de grãos em Santos
@@ -627,27 +769,20 @@ if __name__ == "__main__":
         "toneladas": 60000,
     }
 
-    print("Navio 1: Bulk Carrier com Soja em Santos")
+    print(Colors.highlight("Navio 1: Bulk Carrier com Soja em Santos"))
     print("-" * 70)
 
     # Testar com modelo light
     resultado_light = predictor.predict(navio1, quality_score=0.5, force_model="light")
-    print(f"MODELO LIGHT:")
-    print(f"  Tempo previsto: {resultado_light['tempo_espera_previsto_horas']:.1f}h ({resultado_light['tempo_espera_previsto_dias']:.1f} dias)")
-    print(f"  Categoria: {resultado_light['categoria_fila']}")
-    print(f"  Confiança: {resultado_light['confianca']*100:.1f}%")
-    print(f"  Perfil: {resultado_light['perfil']}")
-    print()
+
+    # Demonstrar formatação amigável
+    print(format_resultado(resultado_light, show_details=True))
+
+    print("\n" + Colors.info("COMPARACAO: Testando modelo completo para o mesmo navio..."))
 
     # Testar com modelo completo
     resultado_complete = predictor.predict(navio1, quality_score=1.0, force_model="complete")
-    print(f"MODELO COMPLETO:")
-    print(f"  Tempo previsto: {resultado_complete['tempo_espera_previsto_horas']:.1f}h ({resultado_complete['tempo_espera_previsto_dias']:.1f} dias)")
-    print(f"  Categoria: {resultado_complete['categoria_fila']}")
-    print(f"  Confiança: {resultado_complete['confianca']*100:.1f}%")
-    print(f"  Perfil: {resultado_complete['perfil']}")
-    print(f"  Features: {resultado_complete['features_calculadas']}")
-    print()
+    print(format_resultado(resultado_complete, show_details=True))
 
     # Exemplo 2: Tanker de fertilizante em Suape
     navio2 = {
@@ -658,16 +793,16 @@ if __name__ == "__main__":
         "dwt": 45000,
     }
 
-    print("\nNavio 2: Chemical Tanker com Ureia em Suape")
+    print("\n" + Colors.highlight("Navio 2: Chemical Tanker com Ureia em Suape"))
     print("-" * 70)
+    print(Colors.info("Previsao com selecao automatica de modelo (quality_score=0.9)"))
 
     resultado2 = predictor.predict(navio2, quality_score=0.9)
-    print(f"  Tempo previsto: {resultado2['tempo_espera_previsto_horas']:.1f}h ({resultado2['tempo_espera_previsto_dias']:.1f} dias)")
-    print(f"  Categoria: {resultado2['categoria_fila']}")
-    print(f"  Perfil: {resultado2['perfil']}")
-    print(f"  Modelo usado: {resultado2['modelo_usado']}")
-    print()
+    print(format_resultado(resultado2, show_details=True))
 
     print("=" * 70)
-    print("✅ Testes concluídos!")
+    print(Colors.success("[OK] Testes concluidos com sucesso!"))
     print("=" * 70)
+
+    # Adicionar legenda explicativa sobre categorias
+    print_legenda_categorias()
