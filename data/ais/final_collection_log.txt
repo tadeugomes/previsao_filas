@@ -1,0 +1,108 @@
+======================================================================
+COLETA FINAL - USAR TODOS OS CRÉDITOS RESTANTES
+======================================================================
+💳 Créditos disponíveis: 10,785
+
+
+======================================================================
+ESTENDER TOP 30 NAVIOS MAIS ATIVOS (+ 60 dias)
+======================================================================
+
+📊 Top 30 navios mais ativos:
+   Créditos estimados: 1,800
+
+[5/30] SERRA NEVADA (Tanker) - Rio Grande (60 atracações) → 773 pos → 30 novas
+[6/30] SERRA POLAR (Tanker) - Santos (8 atracações) → 1328 pos → 4 novas
+[46/30] SEA1 ATLAS (Cargo) - Santos (8 atracações) → 1042 pos → 4 novas
+[1/30] FORTUNE LEGACY (Cargo) - Santos (6 atracações) → 664 pos → 3 novas
+[15/30] MAERSK VENEZIA (Cargo) - Santos (6 atracações) → 1113 pos → 3 novas
+[11/30] BASTOS I (Tanker) - Rio Grande (6 atracações) → 1172 pos → 3 novas
+[61/30] SANTA ANGELINA (Cargo) - Santos (6 atracações) → 1099 pos → 3 novas
+[12/30] LOG IN RESILIENTE (Cargo) - Vitória (4 atracações) → 1331 pos → 4 novas
+[20/30] BLUE IONIAN (Cargo) - Santos (4 atracações) → 874 pos → 2 novas
+    💳 540 usados | 10,245 restantes
+[44/30] FENG HUANG FENG (Cargo) - Paranaguá (4 atracações) → 750 pos → 2 novas
+[30/30] MAERSK KATALIN (Tanker) - Vitória (4 atracações) → 1166 pos → 4 novas
+    💳 660 usados | 10,125 restantes
+[78/30] BLOEMGRACHT (Cargo) - Santos (4 atracações) → 1276 pos → 2 novas
+[59/30] TALIMEN (Cargo) - Paranaguá (4 atracações) → 1323 pos → 2 novas
+[66/30] STOLT MAGNESIUM (Tanker - Hazard B) - Santos (4 atracações) → 610 pos → 2 novas
+[28/30] CMA CGM VERACRUZ (Cargo - Hazard A (Major)) - Santos (4 atracações) → 991 pos → 2 novas
+[58/30] SEABONI (Cargo) - Santos (4 atracações) → 1069 pos → 2 novas
+[81/30] LOWLANDS FREEDOM (Cargo) - Rio Grande (4 atracações) → 1160 pos → 2 novas
+[19/30] POLARIS LEADER (Cargo) - Santos (4 atracações) → 810 pos → 2 novas
+[31/30] VORIAS (Tanker) - Santos (4 atracações) → 1181 pos → 2 novas
+[76/30] BBG BEIHAI (Cargo) - Paranaguá (3 atracações) → 949 pos → 2 novas
+[49/30] EMMANOUIL (Cargo) - Paranaguá (3 atracações) → 882 pos → 2 novas
+[50/30] BARTOLOMEU DIAS (Cargo) - Santos (3 atracações) → 981 pos → 2 novas
+    💳 1,320 usados | 9,465 restantes
+[27/30] FLUMAR BRASIL (Tanker - Hazard B) - Suape (3 atracações) → 1248 pos → 3 novas
+[22/30] MANOUSOS P (Cargo) - Paranaguá (2 atracações) → 413 pos → 1 novas
+[86/30] ORANGE SEA (Cargo) - Santos (2 atracações) → 503 pos → 1 novas
+[21/30] PANAGIA FORCE (Cargo) - Paranaguá (2 atracações) → 710 pos → 1 novas
+[16/30] PM DUKE (Tanker) - Paranaguá (2 atracações) → 618 pos → 1 novas
+[9/30] GRANDE BUENOS AIRES (Cargo) - Santos (2 atracações) → 961 pos → 1 novas
+[17/30] SAGA JOURNEY (Cargo) - Santos (2 atracações) → 794 pos → 1 novas
+[18/30] JANE (Tanker) - Santos (2 atracações) → 754 pos → 1 novas
+
+✅ Total: 94 novas atracações
+💳 Créditos: 1,800 / 10,785
+
+💳 Após extensão: 1,800 | Restantes: 8,985
+
+======================================================================
+COLETANDO: SALVADOR (90 dias)
+======================================================================
+✅ Total: 55 | Cargo/Tanker: 4
+[1/4] EARTH HARMONY → 997 pos → 1
+[2/4] GREEN SANTOS → 436 pos → 1
+[3/4] MARIA BETHANIA → 1130 pos → 144
+[4/4] BULKER BEE 11 → 686 pos → 1
+
+======================================================================
+COLETANDO: ITAJAÍ (90 dias)
+======================================================================
+✅ Total: 35 | Cargo/Tanker: 4
+[1/4] CMA CGM FIORDLAND → 760 pos → 1
+[2/4] LOG IN EXPERIENCE → 1074 pos → 1
+[3/4] RUNAWAY BAY → 670 pos → 1
+[4/4] BRAM BUCCANEER → 1269 pos → 2
+
+💳 Após novos portos: 2,522 | Restantes: 8,263
+
+======================================================================
+DATASET FINAL - MÁXIMO POSSÍVEL
+======================================================================
+
+📊 DATASET COMPLETO:
+   Atracações: 516 (270 anteriores + 246 novas)
+   Navios únicos: 94
+   Portos: 8
+
+🚢 Por porto:
+   Santos: 152
+   Salvador: 147
+   Rio Grande: 113
+   Paranaguá: 49
+   Vitória: 21
+   Suape: 18
+   Itaqui: 11
+   Itajaí: 5
+
+⏱️  Tempo de Espera:
+   Válidos: 466/516 (90.3%)
+   Média: 456.4h (19.0 dias)
+
+💳 CRÉDITOS FINAIS:
+   Usados nesta coleta: 2,522
+   Total GERAL: 11,737 / 20.000
+   Restantes: 8,263
+   Taxa de uso: 58.7%
+
+💾 DATASET FINAL salvo:
+   data/ais/final_dataset.parquet (19.1 KB)
+   data/ais/final_dataset.csv (50.2 KB)
+
+======================================================================
+✅ COLETA COMPLETA - CRÉDITOS MAXIMIZADOS!
+======================================================================

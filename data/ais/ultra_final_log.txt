@@ -1,0 +1,96 @@
+======================================================================
+COLETA FINAL: ESTENDER TODOS OS NAVIOS CONHECIDOS
+======================================================================
+Navios únicos: 94
+Créditos disponíveis: 8,263
+
+Estendendo 94 navios para 120 dias adicionais...
+[11/94] ALCYONE I                      →  840 pos →  1 novas
+[12/94] GREAT HOPE                     →  962 pos →  1 novas
+[13/94] UNITY EXPLORER                 →  887 pos →  1 novas
+[14/94] GRANDE BUENOS AIRES            →  961 pos →  1 novas
+[15/94] MAIRINI                        →  532 pos →  1 novas
+[16/94] SANTA ANGELINA                 → 1099 pos →  3 novas
+[17/94] SERRA POLAR                    → 1328 pos →  4 novas
+[18/94] ARDENNES                       →  870 pos →  1 novas
+[19/94] SEABONI                        → 1069 pos →  2 novas
+[20/94] STOLT MAGNESIUM                →  610 pos →  2 novas
+    💳 1,200 usados | 7,063 restantes
+[21/94] EASTERLY BIRDIE                →  660 pos →  1 novas
+[22/94] PREMIUM DO BRASIL              →  634 pos →  1 novas
+[23/94] REN JIAN 20                    →  654 pos →  1 novas
+[24/94] BARTOLOMEU DIAS                →  981 pos →  2 novas
+[25/94] ADVENTURER                     → 1036 pos →  1 novas
+[26/94] POLARIS LEADER                 →  810 pos →  2 novas
+[27/94] SAO PAULO EXPRESS              →  710 pos →  1 novas
+[28/94] MAERSK VENEZIA                 → 1113 pos →  3 novas
+[29/94] CMA CGM VERACRUZ               →  991 pos →  2 novas
+[30/94] JANE                           →  754 pos →  1 novas
+    💳 2,400 usados | 5,863 restantes
+[31/94] BOW CHAIN                      →  704 pos →  1 novas
+[32/94] SAGA JOURNEY                   →  794 pos →  1 novas
+[33/94] MSC HORTENSE                   → 1444 pos →  1 novas
+[34/94] VORIAS                         → 1181 pos →  2 novas
+[35/94] QUEEN OF DORIA                 →  982 pos →  1 novas
+[36/94] GREEN ITAJAI                   → 1228 pos →  1 novas
+[37/94] IONIC KALLIRHOE                →  850 pos →  1 novas
+[38/94] BRYANT                         →  921 pos →  1 novas
+[39/94] BLUE IONIAN                    →  874 pos →  2 novas
+[40/94] FORTUNE LEGACY                 →  664 pos →  3 novas
+    💳 3,600 usados | 4,663 restantes
+[41/94] MEDUSA                         →  824 pos →  1 novas
+[42/94] ARTVIN                         →  839 pos →  1 novas
+[43/94] ORANGE SEA                     →  503 pos →  1 novas
+[44/94] BLOEMGRACHT                    → 1276 pos →  2 novas
+[45/94] DSI POLARIS                    →  933 pos →  1 novas
+[46/94] SANTA BRISA                    →  291 pos →  1 novas
+[47/94] APOGEE ENDEAVOUR               → 1240 pos →  1 novas
+[48/94] SEA1 ATLAS                     → 1042 pos →  4 novas
+[49/94] CAPE                           →  678 pos →  1 novas
+[50/94] EMMANOUIL                      →  882 pos →  2 novas
+    💳 4,800 usados | 3,463 restantes
+[51/94] FENG HUANG FENG                →  750 pos →  2 novas
+[52/94] PANAGIA FORCE                  →  710 pos →  1 novas
+[53/94] CHRISTIANNA                    →  375 pos →  1 novas
+[54/94] AK HALIMA                      →  909 pos →  1 novas
+[55/94] NIKI                           →  845 pos →  1 novas
+[56/94] TALIMEN                        → 1323 pos →  2 novas
+[57/94] SANTA LINEA                    →  731 pos →  1 novas
+[58/94] CMA CGM LISA MARIE             → 1182 pos →  1 novas
+[59/94] HORIZON THEANO                 → 1278 pos →  1 novas
+[60/94] BOW GLORY                      → 1087 pos →  1 novas
+    💳 6,000 usados | 2,263 restantes
+[61/94] PM DUKE                        →  618 pos →  1 novas
+[62/94] MANOUSOS P                     →  413 pos →  1 novas
+[63/94] STI DUCHESSA                   →  783 pos →  1 novas
+[64/94] BBG BEIHAI                     →  949 pos →  2 novas
+[65/94] MAITACA ARROW                  → 1393 pos →  1 novas
+[66/94] LOWLANDS FREEDOM               → 1160 pos →  2 novas
+[67/94] SERRA NEVADA                   →  773 pos → 30 novas
+[68/94] BASTOS I                       → 1172 pos →  3 novas
+[69/94] JAKARTA                        → 1267 pos →  1 novas
+[70/94] PRIGIPOS                       →  619 pos →  1 novas
+    💳 7,200 usados | 1,063 restantes
+[71/94] MOL EARNEST                    →  607 pos →  1 novas
+
+✅ Coleta concluída!
+💳 Créditos usados: 7,320
+📊 Novas atracações: 117
+
+📊 DATASET FINAL TOTAL:
+   Atracações: 308 (516 antigas + 117 novas - 325 duplicadas)
+   Navios: 94
+   Portos: 8
+
+   Válidos: 270/308 (87.7%)
+   Média: 434.0h (18.1 dias)
+
+💾 Salvo:
+   data/ais/complete_dataset.parquet
+   data/ais/complete_dataset.csv
+
+💳 CRÉDITOS TOTAIS:
+   Usados: 19,057 / 20.000
+   Restantes: 943
+   Taxa: 95.3%
+======================================================================
