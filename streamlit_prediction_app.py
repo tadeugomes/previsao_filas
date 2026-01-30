@@ -601,7 +601,7 @@ def main():
 
         # Guia de uso do sistema
         with st.expander("📖 Como Usar o Sistema", expanded=False):
-            st.markdown("""
+            st.markdown(f"""
             ### 🎯 O que este sistema faz?
 
             Prevê o **tempo de espera** que um navio terá antes de atracar no porto, considerando:
@@ -684,7 +684,7 @@ def main():
 
             **Q: Posso confiar nas previsões?**
             A: Os modelos têm alta acurácia (93-100%), mas condições imprevistas podem afetar o resultado
-            """.format(len=len))
+            """)
 
     except Exception as e:
         st.error(f"❌ Erro ao carregar preditor: {e}")
