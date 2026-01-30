@@ -411,6 +411,247 @@ class MockAISProvider(AISProvider):
         return mock_vessels
 
 
+class DatalasticProvider(AISProvider):
+    """
+    Provider usando Datalastic API (já utilizado no projeto).
+
+    Vantagens:
+    - ✅ Busca direta por IMO
+    - ✅ Dados históricos completos
+    - ✅ Cobertura global de AIS
+    - ✅ Já validado no projeto (308 eventos coletados)
+
+    Custo:
+    - Starter: €199/mês (20.000 créditos)
+    - Experimenter: €399/mês (80.000 créditos)
+
+    Consumo de créditos:
+    - get_vessel_position(): 1 crédito
+    - get_port_traffic(): 1 crédito por navio no raio
+    - get_vessels_in_radius(): 1 crédito por navio
+
+    Website: https://datalastic.com
+    Docs: https://api.datalastic.com/docs
+    """
+
+    def __init__(self, api_key: str):
+        """
+        Inicializa provider Datalastic.
+
+        Args:
+            api_key: Chave API Datalastic (obter em datalastic.com)
+        """
+        if not api_key:
+            raise ValueError(
+                "API key Datalastic necessária. "
+                "Configure: export DATALASTIC_API_KEY='sua_key'"
+            )
+
+        # Importar cliente existente
+        import sys
+        from pathlib import Path
+        sys.path.append(str(Path(__file__).parent / 'pipelines'))
+
+        from pipelines.datalastic_integration import DatalasticClient as DatalasticClientBase
+
+        self.client = DatalasticClientBase(api_key)
+        self.base_url = "https://api.datalastic.com/api/v0"
+
+    def get_vessel_position(self, imo: str) -> Optional[VesselPosition]:
+        """
+        Obtém posição atual de um navio por código IMO.
+
+        Custo: 1 crédito
+        """
+        try:
+            # Usar endpoint vessel_info para posição atual
+            data = self.client.get_real_time_position(imo)
+
+            if not data:
+                return None
+
+            # Parsear resposta Datalastic
+            timestamp_str = data.get('timestamp', datetime.now().isoformat())
+            try:
+                if isinstance(timestamp_str, str):
+                    timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                else:
+                    timestamp = datetime.now()
+            except:
+                timestamp = datetime.now()
+
+            # Parsear ETA se disponível
+            eta = None
+            if data.get('eta'):
+                try:
+                    eta = datetime.fromisoformat(data['eta'].replace('Z', '+00:00'))
+                except:
+                    eta = None
+
+            return VesselPosition(
+                imo=imo,
+                mmsi=str(data.get('mmsi', '')),
+                lat=float(data.get('latitude', 0)),
+                lon=float(data.get('longitude', 0)),
+                speed_knots=float(data.get('speed', 0)),
+                course=float(data.get('course', 0)),
+                heading=float(data.get('heading', 0)),
+                timestamp=timestamp,
+                status=data.get('navigational_status', 'unknown'),
+                destination=data.get('destination'),
+                eta=eta,
+                draught=float(data.get('draught', 0)) if data.get('draught') else None
+            )
+
+        except Exception as e:
+            print(f"Erro ao buscar posição Datalastic para IMO {imo}: {e}")
+            return None
+
+    def get_port_traffic(self, lat: float, lon: float, radius_km: float) -> PortTraffic:
+        """
+        Obtém estatísticas de tráfego em uma área portuária.
+
+        Custo: 1 crédito por navio encontrado no raio
+        """
+        vessels = self.get_vessels_in_radius(lat, lon, radius_km)
+
+        if not vessels:
+            # Fallback: retornar valores padrão
+            return PortTraffic(
+                vessels_in_radius=0,
+                vessels_anchored=0,
+                vessels_moored=0,
+                vessels_underway=0,
+                avg_distance_km=0.0,
+                avg_speed_knots=0.0,
+                timestamp=datetime.now()
+            )
+
+        # Contar por status
+        anchored = sum(1 for v in vessels if 'anchor' in v.status.lower())
+        moored = sum(1 for v in vessels if 'moored' in v.status.lower())
+        underway = sum(1 for v in vessels if 'underway' in v.status.lower())
+
+        # Calcular velocidade média (apenas navios em movimento)
+        speeds = [v.speed_knots for v in vessels if v.speed_knots > 0]
+        avg_speed = sum(speeds) / len(speeds) if speeds else 0.0
+
+        # Calcular distância média do centro
+        distances = [
+            self.haversine_distance(lat, lon, v.lat, v.lon)
+            for v in vessels
+        ]
+        avg_distance = sum(distances) / len(distances) if distances else 0.0
+
+        return PortTraffic(
+            vessels_in_radius=len(vessels),
+            vessels_anchored=anchored,
+            vessels_moored=moored,
+            vessels_underway=underway,
+            avg_distance_km=avg_distance,
+            avg_speed_knots=avg_speed,
+            timestamp=datetime.now()
+        )
+
+    def get_vessels_in_radius(
+        self,
+        lat: float,
+        lon: float,
+        radius_km: float,
+        status_filter: Optional[str] = None
+    ) -> List[VesselPosition]:
+        """
+        Lista todos os navios em um raio específico.
+
+        Custo: 1 crédito por navio retornado
+
+        Args:
+            lat: Latitude do centro
+            lon: Longitude do centro
+            radius_km: Raio de busca em quilômetros
+            status_filter: Filtro de status ('anchor', 'underway', etc)
+
+        Returns:
+            Lista de VesselPosition
+        """
+        try:
+            # Usar endpoint vessel_inradius
+            # Converter raio de km para milhas náuticas (1 km = 0.539957 NM)
+            radius_nm = radius_km * 0.539957
+
+            url = f"{self.base_url}/vessel_inradius"
+            params = {
+                'api-key': self.client.api_key,
+                'lat': lat,
+                'lon': lon,
+                'radius': radius_nm
+            }
+
+            response = self.client.session.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+
+            if not isinstance(data, list):
+                return []
+
+            vessels = []
+
+            for vessel_data in data:
+                try:
+                    # Parsear timestamp
+                    timestamp_str = vessel_data.get('timestamp', datetime.now().isoformat())
+                    try:
+                        if isinstance(timestamp_str, str):
+                            timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                        else:
+                            timestamp = datetime.now()
+                    except:
+                        timestamp = datetime.now()
+
+                    # Parsear ETA
+                    eta = None
+                    if vessel_data.get('eta'):
+                        try:
+                            eta = datetime.fromisoformat(vessel_data['eta'].replace('Z', '+00:00'))
+                        except:
+                            eta = None
+
+                    # Parsear cada navio
+                    vessel = VesselPosition(
+                        imo=str(vessel_data.get('imo', '')),
+                        mmsi=str(vessel_data.get('mmsi', '')),
+                        lat=float(vessel_data.get('latitude', 0)),
+                        lon=float(vessel_data.get('longitude', 0)),
+                        speed_knots=float(vessel_data.get('speed', 0)),
+                        course=float(vessel_data.get('course', 0)),
+                        heading=float(vessel_data.get('heading', 0)),
+                        timestamp=timestamp,
+                        status=vessel_data.get('navigational_status', 'unknown'),
+                        destination=vessel_data.get('destination'),
+                        eta=eta,
+                        draught=float(vessel_data.get('draught', 0)) if vessel_data.get('draught') else None
+                    )
+
+                    # Filtrar por status se especificado
+                    if status_filter and status_filter.lower() not in vessel.status.lower():
+                        continue
+
+                    vessels.append(vessel)
+
+                except (ValueError, KeyError) as e:
+                    # Ignorar navios com dados inválidos
+                    continue
+
+            # Atualizar contador de créditos
+            self.client.credits_used += len(vessels)
+
+            return vessels
+
+        except Exception as e:
+            print(f"Erro ao buscar navios no raio via Datalastic: {e}")
+            return []
+
+
 class AISProviderFactory:
     """Factory para criar providers AIS."""
 
@@ -420,7 +661,7 @@ class AISProviderFactory:
         Cria provider AIS baseado no tipo.
 
         Args:
-            provider_type: 'aishub', 'marinetraffic', 'mock'
+            provider_type: 'datalastic', 'aishub', 'mock'
             **kwargs: Parâmetros específicos (api_key, etc)
 
         Returns:
@@ -430,25 +671,22 @@ class AISProviderFactory:
             ValueError: Se provider desconhecido
 
         Exemplo:
-            # Provider gratuito
-            provider = AISProviderFactory.create('aishub')
-
-            # Provider com API key
+            # Provider Datalastic (produção)
             provider = AISProviderFactory.create(
-                'aishub',
-                api_key='seu_username'
+                'datalastic',
+                api_key=os.getenv('DATALASTIC_API_KEY')
             )
 
-            # Provider mock para testes
+            # Provider AISHub (gratuito)
+            provider = AISProviderFactory.create('aishub')
+
+            # Provider mock (testes)
             provider = AISProviderFactory.create('mock')
         """
         providers = {
+            "datalastic": DatalasticProvider,
             "aishub": AISHubProvider,
             "mock": MockAISProvider,
-            # TODO: Adicionar outros providers
-            # 'marinetraffic': MarineTrafficProvider,
-            # 'vesselfinder': VesselFinderProvider,
-            # 'spire': SpireProvider,
         }
 
         provider_class = providers.get(provider_type.lower())
