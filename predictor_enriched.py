@@ -577,7 +577,8 @@ class EnrichedPredictor:
                 - tempo_espera_previsto_horas: float
                 - categoria_fila: str
                 - categoria_index: int
-                - confianca: float
+                - acuracia_modelo: float (percentual)
+                - r2_modelo: float (percentual)
                 - perfil: str
                 - modelo_usado: str
                 - features_calculadas: int
@@ -628,12 +629,16 @@ class EnrichedPredictor:
         categoria_idx = int(clf_model.predict(X)[0])
         categoria = CATEGORIAS.get(categoria_idx, "Desconhecido")
 
-        # Confiança (baseada em probabilidade do classificador)
-        try:
-            proba = clf_model.predict_proba(X)[0]
-            confianca = float(proba[categoria_idx])
-        except:
-            confianca = 0.8
+        # Métricas do modelo (do metadata)
+        if use_complete and self.models[perfil]["has_complete"]:
+            metadata = self.models[perfil]["complete_meta"]
+        else:
+            metadata = self.models[perfil]["light_meta"]
+
+        # Extrair métricas de desempenho do modelo
+        metrics = metadata.get("metrics", {})
+        acuracia = metrics.get("test_acc", 0.0) * 100  # Converter para percentual
+        r2_score = metrics.get("test_r2", 0.0) * 100   # Converter para percentual
 
         # 5. Retornar resultado
         return {
@@ -641,7 +646,8 @@ class EnrichedPredictor:
             "tempo_espera_previsto_dias": round(tempo_previsto / 24, 1),
             "categoria_fila": categoria,
             "categoria_index": categoria_idx,
-            "confianca": round(confianca, 3),
+            "acuracia_modelo": round(acuracia, 1),
+            "r2_modelo": round(r2_score, 1),
             "perfil": perfil,
             "modelo_usado": modelo_usado,
             "features_calculadas": len(features),
@@ -712,15 +718,22 @@ def format_resultado(resultado: Dict, show_details: bool = True) -> str:
     output.append(f"\n{Colors.bold('Categoria:')} {color_func(categoria)}")
     output.append(f"{Colors.bold('Explicacao:')} {get_categoria_explicacao(categoria)}")
 
-    # Confiança
-    confianca = resultado['confianca'] * 100
-    if confianca >= 80:
-        conf_color = Colors.success
-    elif confianca >= 60:
-        conf_color = Colors.info
+    # Métricas do modelo
+    acuracia = resultado.get('acuracia_modelo', 0)
+    r2 = resultado.get('r2_modelo', 0)
+
+    # Cor baseada na qualidade (usar a menor das duas métricas)
+    metrica_min = min(acuracia, r2)
+    if metrica_min >= 90:
+        metric_color = Colors.success
+    elif metrica_min >= 80:
+        metric_color = Colors.info
     else:
-        conf_color = Colors.warning
-    output.append(f"\n{Colors.bold('Confianca da previsao:')} {conf_color(f'{confianca:.1f}%')}")
+        metric_color = Colors.warning
+
+    output.append(f"\n{Colors.bold('METRICAS DO MODELO:')}")
+    output.append(f"  Acuracia (classificacao): {metric_color(f'{acuracia:.1f}%')}")
+    output.append(f"  R² (regressao): {metric_color(f'{r2:.1f}%')}")
 
     # Detalhes técnicos (opcional)
     if show_details:

@@ -329,12 +329,13 @@ def show_prediction_card(resultado, lineup_info=None):
         )
 
     with col3:
-        confianca_pct = resultado['confianca'] * 100
+        acuracia = resultado.get('acuracia_modelo', 0)
+        r2 = resultado.get('r2_modelo', 0)
         st.markdown(
             f"""
-            <div class="metric-label">Confiança</div>
+            <div class="metric-label">Acurácia / R²</div>
             <div style="font-size: 1.5rem; font-weight: bold;">
-                {confianca_pct:.1f}%
+                {acuracia:.1f}% / {r2:.1f}%
             </div>
             """,
             unsafe_allow_html=True,
@@ -350,6 +351,22 @@ def show_prediction_card(resultado, lineup_info=None):
             """,
             unsafe_allow_html=True,
         )
+
+    # Explicação das métricas
+    with st.expander("ℹ️ O que significam Acurácia e R²?"):
+        st.markdown("""
+        **Acurácia (Classificação):** Percentual de acerto do modelo ao classificar a fila em categorias
+        (0-2 dias, 2-7 dias, etc.). Mostra com que frequência o modelo prevê a categoria correta.
+
+        **R² (Regressão):** Mede a qualidade da previsão do tempo exato de espera. Um R² de 98% significa
+        que o modelo explica 98% da variação dos tempos de espera reais.
+
+        **Importante:** Estes valores refletem o desempenho geral do modelo nos testes, não apenas desta previsão específica.
+
+        - ✅ **> 90%**: Excelente precisão
+        - ⚠️ **80-90%**: Boa precisão
+        - 🔶 **< 80%**: Precisão moderada
+        """)
 
     # Informações adicionais
     st.markdown("---")
@@ -1035,13 +1052,15 @@ def main():
 
                     with col3:
                         st.metric(
-                            "Confiança Média",
-                            f"{df_results['confianca'].mean() * 100:.1f}%"
+                            "Acurácia Média",
+                            f"{df_results['acuracia_modelo'].mean():.1f}%"
                         )
 
                     with col4:
-                        perfil_mais_comum = df_results["perfil"].mode()[0] if len(df_results) > 0 else "N/A"
-                        st.metric("Perfil Mais Comum", perfil_mais_comum)
+                        st.metric(
+                            "R² Médio",
+                            f"{df_results['r2_modelo'].mean():.1f}%"
+                        )
 
                     # Tabela de resultados
                     st.markdown("### 📊 Resultados Detalhados")
@@ -1051,13 +1070,16 @@ def main():
                     df_display["tempo_espera_previsto_horas"] = df_display["tempo_espera_previsto_horas"].apply(
                         lambda x: format_hours_to_days(x) if pd.notna(x) else "N/A"
                     )
-                    df_display["confianca"] = df_display["confianca"].apply(
-                        lambda x: f"{x*100:.1f}%" if pd.notna(x) else "N/A"
+                    df_display["acuracia_modelo"] = df_display["acuracia_modelo"].apply(
+                        lambda x: f"{x:.1f}%" if pd.notna(x) else "N/A"
+                    )
+                    df_display["r2_modelo"] = df_display["r2_modelo"].apply(
+                        lambda x: f"{x:.1f}%" if pd.notna(x) else "N/A"
                     )
 
                     # Selecionar colunas para exibição
                     display_cols = ["porto", "eta", "perfil", "tempo_espera_previsto_horas",
-                                    "categoria_fila", "confianca", "modelo_usado"]
+                                    "categoria_fila", "acuracia_modelo", "r2_modelo", "modelo_usado"]
 
                     # Adicionar colunas de comparação se disponíveis
                     if 'imo' in df_display.columns and df_display['imo'].notna().any():
@@ -1079,6 +1101,8 @@ def main():
                             "eta_lineup": st.column_config.TextColumn("ETA Lineup", help="ETA do lineup original"),
                             "eta_previsto": st.column_config.TextColumn("ETA Previsto", help="ETA previsto com espera"),
                             "delta_dias": st.column_config.NumberColumn("Atraso (dias)", help="Diferença em dias entre ETA previsto e lineup", format="%.1f"),
+                            "acuracia_modelo": st.column_config.TextColumn("Acurácia", help="Acurácia do modelo em testes (classificação de categorias)"),
+                            "r2_modelo": st.column_config.TextColumn("R²", help="R² do modelo em testes (qualidade da regressão)"),
                         }
                     )
 
