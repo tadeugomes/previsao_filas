@@ -204,11 +204,73 @@ def buscar_navio_por_imo(imo, predictor):
         if carga_cols:
             resultado['carga'] = str(navio[carga_cols[0]])
 
+        # Calado
+        if 'calado' in navio_rows.columns:
+            resultado['calado'] = float(navio['calado']) if pd.notna(navio['calado']) else None
+
+        # Toneladas
+        toneladas_cols = [col for col in navio_rows.columns if 'tonelada' in col.lower() or 'quantidade' in col.lower()]
+        if toneladas_cols:
+            resultado['toneladas'] = float(navio[toneladas_cols[0]]) if pd.notna(navio[toneladas_cols[0]]) else None
+
         return resultado
 
     except Exception as e:
         st.warning(f"⚠️ Erro ao buscar navio por IMO: {e}")
         return None
+
+
+def listar_navios_lineup(predictor):
+    """
+    Lista todos os navios disponíveis no lineup_history.
+
+    Args:
+        predictor: Instância do EnrichedPredictor com lineup_history carregado
+
+    Returns:
+        Dict mapeando "Nome (IMO: xxx)" para dados do navio
+    """
+    navios_dict = {}
+
+    if predictor.lineup_history.empty:
+        return navios_dict
+
+    try:
+        df = predictor.lineup_history.copy()
+
+        # Verificar colunas necessárias
+        imo_cols = [col for col in df.columns if 'imo' in col.lower()]
+        nome_cols = [col for col in df.columns if 'navio' in col.lower() or 'nome' in col.lower()]
+
+        if not imo_cols or not nome_cols:
+            return navios_dict
+
+        imo_col = imo_cols[0]
+        nome_col = nome_cols[0]
+
+        # Limpar e filtrar
+        df = df[[imo_col, nome_col]].dropna()
+        df[imo_col] = df[imo_col].astype(str).str.strip()
+        df[nome_col] = df[nome_col].astype(str).str.strip()
+
+        # Remover duplicatas (pegar registro mais recente por IMO)
+        df = df.drop_duplicates(subset=[imo_col], keep='first')
+
+        # Criar dicionário com formato amigável
+        for _, row in df.iterrows():
+            imo = row[imo_col]
+            nome = row[nome_col]
+
+            if imo and nome and imo != 'nan' and nome != 'nan':
+                # Formato: "Nome do Navio (IMO: 9123456)"
+                display_name = f"{nome} (IMO: {imo})"
+                navios_dict[display_name] = imo
+
+        return navios_dict
+
+    except Exception as e:
+        st.warning(f"⚠️ Erro ao listar navios: {e}")
+        return navios_dict
 
 
 def show_prediction_card(resultado, lineup_info=None):
@@ -484,77 +546,178 @@ def main():
     if modo_entrada == "📝 Entrada Manual":
         st.markdown("## Dados do Navio")
 
-        # Campo IMO (opcional)
-        imo_input = st.text_input(
-            "🔍 IMO do Navio (opcional)",
-            value="",
-            max_chars=10,
-            help="Código IMO do navio. Se preenchido, buscaremos o navio no lineup para comparar ETAs.",
-            placeholder="Ex: 9123456"
+        # Opção de seleção ou entrada manual
+        modo_selecao = st.radio(
+            "Escolha o modo de entrada:",
+            ["🔍 Selecionar do Lineup", "✍️ Entrada Manual / Busca por IMO"],
+            horizontal=True,
         )
 
-        # Buscar navio no lineup se IMO foi fornecido
         lineup_info = None
-        if imo_input:
-            with st.spinner(f"Buscando navio IMO {imo_input} no lineup..."):
-                lineup_info = buscar_navio_por_imo(imo_input, predictor)
 
-            if lineup_info:
-                st.success(f"✅ Navio encontrado no lineup: {lineup_info.get('nome_navio', 'N/A')}")
+        # ========================================================================
+        # MODO: SELECIONAR DO LINEUP
+        # ========================================================================
+        if modo_selecao == "🔍 Selecionar do Lineup":
+            # Listar navios disponíveis
+            navios_disponiveis = listar_navios_lineup(predictor)
 
-                # Preencher campos automaticamente se disponível
-                if lineup_info.get('eta_lineup'):
-                    st.info(f"📋 ETA do Lineup: {lineup_info['eta_lineup_str']}")
+            if not navios_disponiveis:
+                st.warning("⚠️ Nenhum navio encontrado no lineup histórico. Use a opção 'Entrada Manual'.")
             else:
-                st.warning(f"⚠️ Navio IMO {imo_input} não encontrado no lineup histórico. Você pode continuar com entrada manual.")
+                st.info(f"📋 {len(navios_disponiveis)} navios disponíveis no lineup")
+
+                # Selectbox com os navios
+                navio_selecionado = st.selectbox(
+                    "Selecione o Navio",
+                    options=["Selecione..."] + list(navios_disponiveis.keys()),
+                    index=0,
+                )
+
+                if navio_selecionado != "Selecione...":
+                    # Buscar IMO do navio selecionado
+                    imo_selecionado = navios_disponiveis[navio_selecionado]
+
+                    with st.spinner(f"Carregando dados do navio..."):
+                        lineup_info = buscar_navio_por_imo(imo_selecionado, predictor)
+
+                    if lineup_info:
+                        st.success(f"✅ Navio carregado: {lineup_info.get('nome_navio', 'N/A')}")
+
+                        # Mostrar informações do lineup em um card
+                        with st.expander("📋 Informações do Lineup", expanded=True):
+                            col_info1, col_info2 = st.columns(2)
+
+                            with col_info1:
+                                st.markdown(f"**Navio:** {lineup_info.get('nome_navio', 'N/A')}")
+                                st.markdown(f"**IMO:** {lineup_info.get('imo', 'N/A')}")
+                                st.markdown(f"**Porto:** {lineup_info.get('porto', 'N/A')}")
+                                st.markdown(f"**ETA Lineup:** {lineup_info.get('eta_lineup_str', 'N/A')}")
+
+                            with col_info2:
+                                st.markdown(f"**Tipo:** {lineup_info.get('tipo_navio', 'N/A')}")
+                                st.markdown(f"**Carga:** {lineup_info.get('carga', 'N/A')}")
+                                st.markdown(f"**DWT:** {lineup_info.get('dwt', 'N/A')}")
+
+                        # Usar valores do lineup como padrão
+                        porto_default = lineup_info.get('porto', 'Santos')
+                        tipo_default = lineup_info.get('tipo_navio', 'Bulk Carrier')
+                        carga_default = lineup_info.get('carga', 'Soja em Graos')
+                        dwt_default = lineup_info.get('dwt', 75000) if lineup_info.get('dwt') else 75000
+                        calado_default = lineup_info.get('calado', 12.5) if lineup_info.get('calado') else 12.5
+                        toneladas_default = lineup_info.get('toneladas', 50000) if lineup_info.get('toneladas') else 50000
+
+                        # ETA do lineup como padrão
+                        if lineup_info.get('eta_lineup'):
+                            eta_default = lineup_info['eta_lineup'].date()
+                        else:
+                            eta_default = datetime.now() + timedelta(days=7)
+                    else:
+                        st.error("❌ Erro ao carregar dados do navio")
+                        st.stop()
+                else:
+                    # Valores padrão se nenhum navio selecionado
+                    porto_default = 'Santos'
+                    tipo_default = 'Bulk Carrier'
+                    carga_default = 'Soja em Graos'
+                    dwt_default = 75000
+                    calado_default = 12.5
+                    toneladas_default = 50000
+                    eta_default = datetime.now() + timedelta(days=7)
+
+        # ========================================================================
+        # MODO: ENTRADA MANUAL / BUSCA POR IMO
+        # ========================================================================
+        else:
+            # Campo IMO (opcional)
+            imo_input = st.text_input(
+                "🔍 IMO do Navio (opcional - para comparação com lineup)",
+                value="",
+                max_chars=10,
+                help="Código IMO do navio. Se preenchido, buscaremos o navio no lineup para comparar ETAs.",
+                placeholder="Ex: 9123456"
+            )
+
+            # Buscar navio no lineup se IMO foi fornecido
+            if imo_input:
+                with st.spinner(f"Buscando navio IMO {imo_input} no lineup..."):
+                    lineup_info = buscar_navio_por_imo(imo_input, predictor)
+
+                if lineup_info:
+                    st.success(f"✅ Navio encontrado no lineup: {lineup_info.get('nome_navio', 'N/A')}")
+
+                    # Preencher campos automaticamente se disponível
+                    if lineup_info.get('eta_lineup'):
+                        st.info(f"📋 ETA do Lineup: {lineup_info['eta_lineup_str']}")
+                else:
+                    st.warning(f"⚠️ Navio IMO {imo_input} não encontrado no lineup histórico. Você pode continuar com entrada manual.")
+
+            # Valores padrão para entrada manual
+            porto_default = 'Santos'
+            tipo_default = 'Bulk Carrier'
+            carga_default = 'Soja em Graos'
+            dwt_default = 75000
+            calado_default = 12.5
+            toneladas_default = 50000
+            eta_default = datetime.now() + timedelta(days=7)
 
         st.markdown("---")
 
         col1, col2 = st.columns(2)
 
+        # Determinar índices baseados nos valores padrão
+        portos_list = list(PORTOS.keys())
+        porto_index = portos_list.index(porto_default) if porto_default in portos_list else 0
+
+        tipos_list = [
+            "Bulk Carrier",
+            "Tanker",
+            "Chemical Tanker",
+            "Ore Carrier",
+            "General Cargo",
+            "Container Ship",
+        ]
+        tipo_index = tipos_list.index(tipo_default) if tipo_default in tipos_list else 0
+
+        cargas_list = [
+            "Soja em Graos",
+            "Milho",
+            "Farelo de Soja",
+            "Acucar",
+            "Trigo",
+            "Minerio de Ferro",
+            "Bauxita",
+            "Manganes",
+            "Ureia",
+            "KCL",
+            "NPK",
+            "Fosfato",
+        ]
+        carga_index = cargas_list.index(carga_default) if carga_default in cargas_list else 0
+
         with col1:
             porto = st.selectbox(
                 "Porto de Destino *",
-                options=list(PORTOS.keys()),
-                index=0,
+                options=portos_list,
+                index=porto_index,
             )
 
             tipo_navio = st.selectbox(
                 "Tipo de Navio",
-                options=[
-                    "Bulk Carrier",
-                    "Tanker",
-                    "Chemical Tanker",
-                    "Ore Carrier",
-                    "General Cargo",
-                    "Container Ship",
-                ],
-                index=0,
+                options=tipos_list,
+                index=tipo_index,
             )
 
             natureza_carga = st.selectbox(
                 "Natureza da Carga",
-                options=[
-                    "Soja em Graos",
-                    "Milho",
-                    "Farelo de Soja",
-                    "Acucar",
-                    "Trigo",
-                    "Minerio de Ferro",
-                    "Bauxita",
-                    "Manganes",
-                    "Ureia",
-                    "KCL",
-                    "NPK",
-                    "Fosfato",
-                ],
-                index=0,
+                options=cargas_list,
+                index=carga_index,
             )
 
         with col2:
             eta = st.date_input(
                 "ETA (Estimated Time of Arrival) *",
-                value=datetime.now() + timedelta(days=7),
+                value=eta_default,
                 min_value=datetime.now().date(),
                 max_value=datetime.now().date() + timedelta(days=365),
             )
@@ -563,7 +726,7 @@ def main():
                 "DWT (Deadweight Tonnage)",
                 min_value=1000,
                 max_value=400000,
-                value=75000,
+                value=int(dwt_default),
                 step=1000,
                 help="Capacidade de carga do navio em toneladas",
             )
@@ -572,7 +735,7 @@ def main():
                 "Calado (metros)",
                 min_value=1.0,
                 max_value=25.0,
-                value=12.5,
+                value=float(calado_default),
                 step=0.5,
                 help="Profundidade do navio submerso",
             )
@@ -581,7 +744,7 @@ def main():
             "Movimentação Total (toneladas)",
             min_value=1000,
             max_value=400000,
-            value=50000,
+            value=int(toneladas_default),
             step=1000,
             help="Quantidade total de carga a ser movimentada",
         )
