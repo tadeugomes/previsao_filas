@@ -655,7 +655,7 @@ def main():
                 "🔍 IMO do Navio (opcional - para comparação com lineup)",
                 value="",
                 max_chars=10,
-                help="Código IMO do navio. Se preenchido, buscaremos o navio no lineup para comparar ETAs.",
+                help="Código IMO do navio. Se preenchido, buscaremos o navio no lineup para comparar ETAs e preencher os campos automaticamente.",
                 placeholder="Ex: 9123456"
             )
 
@@ -667,20 +667,47 @@ def main():
                 if lineup_info:
                     st.success(f"✅ Navio encontrado no lineup: {lineup_info.get('nome_navio', 'N/A')}")
 
-                    # Preencher campos automaticamente se disponível
+                    # Mostrar informações encontradas
+                    dados_encontrados = []
+                    if lineup_info.get('porto'):
+                        dados_encontrados.append(f"Porto: {lineup_info['porto']}")
+                    if lineup_info.get('tipo_navio'):
+                        dados_encontrados.append(f"Tipo: {lineup_info['tipo_navio']}")
+                    if lineup_info.get('carga'):
+                        dados_encontrados.append(f"Carga: {lineup_info['carga']}")
                     if lineup_info.get('eta_lineup'):
-                        st.info(f"📋 ETA do Lineup: {lineup_info['eta_lineup_str']}")
+                        dados_encontrados.append(f"ETA: {lineup_info['eta_lineup_str']}")
+
+                    if dados_encontrados:
+                        st.info("📋 Dados encontrados e preenchidos automaticamente:\n" + " | ".join(dados_encontrados))
                 else:
                     st.warning(f"⚠️ Navio IMO {imo_input} não encontrado no lineup histórico. Você pode continuar com entrada manual.")
 
             # Valores padrão para entrada manual
-            porto_default = 'Santos'
-            tipo_default = 'Bulk Carrier'
-            carga_default = 'Soja em Graos'
-            dwt_default = 75000
-            calado_default = 12.5
-            toneladas_default = 50000
-            eta_default = datetime.now() + timedelta(days=7)
+            # Se encontrou dados no lineup, usar esses valores; caso contrário, usar valores padrão
+            if imo_input and lineup_info:
+                # Usar valores do lineup quando disponíveis
+                porto_default = lineup_info.get('porto', 'Santos')
+                tipo_default = lineup_info.get('tipo_navio', 'Bulk Carrier')
+                carga_default = lineup_info.get('carga', 'Soja em Graos')
+                dwt_default = lineup_info.get('dwt', 75000) or 75000
+                calado_default = lineup_info.get('calado', 12.5) or 12.5
+                toneladas_default = lineup_info.get('toneladas', 50000) or 50000
+
+                # Se houver ETA do lineup, usar como sugestão
+                if lineup_info.get('eta_lineup'):
+                    eta_default = lineup_info['eta_lineup'].date()
+                else:
+                    eta_default = datetime.now() + timedelta(days=7)
+            else:
+                # Valores padrão normais para entrada manual
+                porto_default = 'Santos'
+                tipo_default = 'Bulk Carrier'
+                carga_default = 'Soja em Graos'
+                dwt_default = 75000
+                calado_default = 12.5
+                toneladas_default = 50000
+                eta_default = datetime.now() + timedelta(days=7)
 
         st.markdown("---")
 
