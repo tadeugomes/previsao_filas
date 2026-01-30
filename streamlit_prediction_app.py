@@ -599,27 +599,92 @@ def main():
     try:
         predictor = load_predictor()
 
-        # Mostrar estatísticas do sistema
-        with st.expander("ℹ️ Informações do Sistema", expanded=False):
-            col1, col2, col3 = st.columns(3)
+        # Guia de uso do sistema
+        with st.expander("📖 Como Usar o Sistema", expanded=False):
+            st.markdown("""
+            ### 🎯 O que este sistema faz?
 
-            with col1:
-                st.markdown("**Modelos Disponíveis**")
-                st.markdown("- ✅ VEGETAL (Grãos)")
-                st.markdown("- ✅ MINERAL (Minério)")
-                st.markdown("- ✅ FERTILIZANTE (Químicos)")
+            Prevê o **tempo de espera** que um navio terá antes de atracar no porto, considerando:
+            - Fila atual de navios
+            - Tipo de carga
+            - Condições climáticas
+            - Histórico do porto
 
-            with col2:
-                st.markdown("**Performance (MAE)**")
-                st.markdown("- VEGETAL: **8.7h** (completo)")
-                st.markdown("- MINERAL: **16.4h** (light)")
-                st.markdown("- FERTILIZANTE: **60.3h** (light)")
+            ---
 
-            with col3:
-                st.markdown("**Dados Utilizados**")
-                st.markdown(f"- Lineups históricos: {len(predictor.lineup_history)}")
-                st.markdown(f"- Portos cobertos: {len(PORTOS)}")
-                st.markdown(f"- Features calculadas: 15-51")
+            ### 📝 Como fazer uma previsão:
+
+            **Opção 1: Entrada Manual**
+            1. Preencha os dados básicos do navio (porto, tipo, carga, ETA)
+            2. Ajuste informações técnicas (DWT, calado, toneladas)
+            3. Escolha o perfil de carga (ou deixe automático)
+            4. Clique em "🔮 Fazer Previsão"
+
+            **Opção 2: Selecionar do Lineup**
+            1. Escolha um navio da lista disponível
+            2. Dados serão preenchidos automaticamente
+            3. Ajuste se necessário
+            4. Clique em "🔮 Fazer Previsão"
+
+            **Opção 3: Upload em Lote (CSV)**
+            1. Prepare arquivo CSV com múltiplos navios
+            2. Faça upload do arquivo
+            3. Sistema processa todos de uma vez
+
+            ---
+
+            ### 🌾 Perfis de Carga:
+
+            O sistema usa modelos especializados para cada tipo de carga:
+
+            - **VEGETAL**: Grãos, celulose, açúcar (Santos, Paranaguá, Itaqui)
+            - **MINERAL**: Minério, bauxita, cimento (Vitória)
+            - **FERTILIZANTE**: Ureia, fertilizantes químicos (Suape)
+
+            💡 **Dica**: O perfil é detectado automaticamente, mas você pode alterá-lo manualmente.
+
+            ---
+
+            ### 📊 Entendendo os Resultados:
+
+            Após a previsão, você verá:
+
+            - **Tempo de Espera**: Em dias e horas
+            - **Categoria**: Rápido (0-2d), Normal (2-7d), Longo (7-14d), Muito Longo (14+d)
+            - **ETA Original vs Previsto**: Comparação entre chegada e atracação
+            - **Métricas do Modelo**: Acurácia e R² indicam qualidade do modelo
+
+            ---
+
+            ### 🔧 Configurações Avançadas:
+
+            Na barra lateral você pode:
+            - Escolher entre modelo **Completo** (mais preciso) ou **Light** (mais rápido)
+            - Ajustar o Quality Score para dados com qualidade variável
+            - Visualizar features calculadas (para análise técnica)
+
+            ---
+
+            ### 📍 Portos Cobertos:
+
+            **{len(PORTOS)} portos brasileiros**: Santos, Paranaguá, Rio Grande, Itaqui, Vitória, Suape, Salvador, Itajaí
+
+            ---
+
+            ### ❓ Dúvidas Frequentes:
+
+            **Q: O que é ETA?**
+            A: Estimated Time of Arrival - hora prevista de chegada no porto
+
+            **Q: Qual a diferença entre ETA Original e ETA Previsto?**
+            A: ETA Original é quando o navio chega. ETA Previsto é quando conseguirá atracar (após a fila)
+
+            **Q: O que significa DWT?**
+            A: Deadweight Tonnage - capacidade de carga do navio em toneladas
+
+            **Q: Posso confiar nas previsões?**
+            A: Os modelos têm alta acurácia (93-100%), mas condições imprevistas podem afetar o resultado
+            """.format(len=len))
 
     except Exception as e:
         st.error(f"❌ Erro ao carregar preditor: {e}")
