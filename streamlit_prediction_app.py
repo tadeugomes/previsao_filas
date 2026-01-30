@@ -192,7 +192,14 @@ def buscar_navio_por_imo(imo, predictor):
 
         # DWT
         if 'dwt' in navio_rows.columns:
-            resultado['dwt'] = float(navio['dwt']) if pd.notna(navio['dwt']) else None
+            try:
+                dwt_val = navio['dwt']
+                if pd.notna(dwt_val) and str(dwt_val).strip() not in ['', 'nan', 'None']:
+                    resultado['dwt'] = float(dwt_val)
+                else:
+                    resultado['dwt'] = None
+            except (ValueError, TypeError):
+                resultado['dwt'] = None
 
         # Tipo de navio
         tipo_cols = [col for col in navio_rows.columns if 'tipo' in col.lower()]
@@ -206,12 +213,26 @@ def buscar_navio_por_imo(imo, predictor):
 
         # Calado
         if 'calado' in navio_rows.columns:
-            resultado['calado'] = float(navio['calado']) if pd.notna(navio['calado']) else None
+            try:
+                calado_val = navio['calado']
+                if pd.notna(calado_val) and str(calado_val).strip() not in ['', 'nan', 'None']:
+                    resultado['calado'] = float(calado_val)
+                else:
+                    resultado['calado'] = None
+            except (ValueError, TypeError):
+                resultado['calado'] = None
 
         # Toneladas
         toneladas_cols = [col for col in navio_rows.columns if 'tonelada' in col.lower() or 'quantidade' in col.lower()]
         if toneladas_cols:
-            resultado['toneladas'] = float(navio[toneladas_cols[0]]) if pd.notna(navio[toneladas_cols[0]]) else None
+            try:
+                ton_val = navio[toneladas_cols[0]]
+                if pd.notna(ton_val) and str(ton_val).strip() not in ['', 'nan', 'None']:
+                    resultado['toneladas'] = float(ton_val)
+                else:
+                    resultado['toneladas'] = None
+            except (ValueError, TypeError):
+                resultado['toneladas'] = None
 
         return resultado
 
