@@ -357,23 +357,25 @@ class EnrichedPredictor:
         if "tanker" in tipo_lower or "chemical" in tipo_lower:
             return "FERTILIZANTE"
 
-        # Verificar pela carga
-        if any(x in carga_lower for x in ["soja", "milho", "farelo", "acucar", "trigo", "cevada"]):
+        # Verificar pela carga - prioridade máxima
+        if any(x in carga_lower for x in ["soja", "milho", "farelo", "acucar", "trigo", "cevada",
+                                            "celulose", "papel", "algodao", "algodão"]):
             return "VEGETAL"
 
-        if any(x in carga_lower for x in ["minerio", "bauxita", "manganes", "ferro", "cimento"]):
+        if any(x in carga_lower for x in ["minerio", "minério", "bauxita", "manganes", "manganês",
+                                            "ferro", "cimento"]):
             return "MINERAL"
 
         if any(x in carga_lower for x in ["ureia", "kcl", "npk", "fosfato", "fertil"]):
             return "FERTILIZANTE"
 
-        # Inferir pelo porto + tipo
+        # Inferir pelo porto + tipo (quando carga não é específica)
         if "bulk" in tipo_lower or "cargo" in tipo_lower:
-            # Portos de grãos
-            if porto in ["Santos", "Paranaguá", "Rio Grande"]:
+            # Portos de grãos e celulose
+            if porto in ["Santos", "Paranaguá", "Rio Grande", "Itaqui"]:
                 return "VEGETAL"
             # Portos de minério
-            elif porto in ["Itaqui", "Vitória"]:
+            elif porto in ["Vitória"]:
                 return "MINERAL"
             else:
                 return "VEGETAL"  # Default
@@ -383,17 +385,19 @@ class EnrichedPredictor:
     def enrich_features(
         self,
         navio_data: Dict,
-        use_complete_model: bool = False
-    ) -> Tuple[Dict, List[str]]:
+        use_complete_model: bool = False,
+        force_profile: Optional[str] = None
+    ) -> Tuple[Dict, str]:
         """
         Enriquece dados básicos do navio com todas as features necessárias.
 
         Args:
             navio_data: Dict com dados básicos (porto, tipo, carga, eta, dwt, calado)
             use_complete_model: Se True, gera features para modelo completo (35-51)
+            force_profile: Se fornecido, usa este perfil ao invés de inferir automaticamente
 
         Returns:
-            (features_dict, feature_names)
+            (features_dict, perfil)
         """
         features = {}
 
@@ -406,8 +410,11 @@ class EnrichedPredictor:
         calado = navio_data.get("calado", 12.5)
         toneladas = navio_data.get("toneladas", 50000)
 
-        # Inferir perfil
-        perfil = self.inferir_perfil(tipo_navio, natureza_carga, porto)
+        # Determinar perfil: usar force_profile se fornecido, senão inferir
+        if force_profile and force_profile.upper() in ["VEGETAL", "MINERAL", "FERTILIZANTE"]:
+            perfil = force_profile.upper()
+        else:
+            perfil = self.inferir_perfil(tipo_navio, natureza_carga, porto)
 
         # ===== FEATURES BÁSICAS =====
         features["nome_porto"] = porto
@@ -555,7 +562,8 @@ class EnrichedPredictor:
         self,
         navio_data: Dict,
         quality_score: float = 1.0,
-        force_model: Optional[str] = None
+        force_model: Optional[str] = None,
+        force_profile: Optional[str] = None
     ) -> Dict:
         """
         Faz previsão de tempo de espera para um navio.
@@ -571,6 +579,7 @@ class EnrichedPredictor:
                 - toneladas: float (opcional)
             quality_score: Score de qualidade dos dados (0-1)
             force_model: "complete" ou "light" para forçar uso de modelo específico
+            force_profile: "VEGETAL", "MINERAL" ou "FERTILIZANTE" para forçar uso de perfil específico
 
         Returns:
             Dict com resultado da previsão:
@@ -583,8 +592,8 @@ class EnrichedPredictor:
                 - modelo_usado: str
                 - features_calculadas: int
         """
-        # 1. Enriquecer features e inferir perfil
-        features, perfil = self.enrich_features(navio_data, use_complete_model=False)
+        # 1. Enriquecer features e inferir/usar perfil
+        features, perfil = self.enrich_features(navio_data, use_complete_model=False, force_profile=force_profile)
 
         # 2. Decidir qual modelo usar
         use_complete = False
@@ -607,7 +616,7 @@ class EnrichedPredictor:
                 use_complete = True
                 modelo_usado = "complete"
                 # Re-enriquecer com features completas
-                features, _ = self.enrich_features(navio_data, use_complete_model=True)
+                features, _ = self.enrich_features(navio_data, use_complete_model=True, force_profile=force_profile)
 
         # 3. Preparar array de features
         X = self.prepare_feature_array(features, perfil, use_complete)

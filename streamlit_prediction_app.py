@@ -903,6 +903,57 @@ def main():
             help="Quantidade total de carga a ser movimentada",
         )
 
+        # Seleção de perfil de modelo
+        st.markdown("---")
+        st.markdown("### 🎯 Perfil do Modelo")
+
+        # Inferir perfil automaticamente baseado nos dados
+        perfil_inferido = predictor.inferir_perfil(tipo_navio, natureza_carga, porto)
+
+        # Mostrar o perfil inferido e permitir override
+        col_perfil1, col_perfil2 = st.columns([2, 1])
+
+        with col_perfil1:
+            perfil_selecionado = st.selectbox(
+                "Selecione o perfil de carga",
+                options=["VEGETAL", "MINERAL", "FERTILIZANTE"],
+                index=["VEGETAL", "MINERAL", "FERTILIZANTE"].index(perfil_inferido),
+                help="O perfil determina qual modelo será usado. VEGETAL: grãos, celulose. MINERAL: minério. FERTILIZANTE: ureia, KCL."
+            )
+
+        with col_perfil2:
+            if perfil_selecionado == perfil_inferido:
+                st.success(f"✅ Automático")
+                st.caption(f"Inferido: {perfil_inferido}")
+            else:
+                st.warning(f"⚠️ Manual")
+                st.caption(f"Inferido: {perfil_inferido}")
+
+        # Explicação sobre os perfis
+        with st.expander("ℹ️ O que são os perfis de carga?"):
+            st.markdown("""
+            O sistema usa 3 modelos especializados, cada um treinado para um tipo específico de carga:
+
+            **🌾 VEGETAL:**
+            - Grãos: soja, milho, farelo, trigo
+            - Celulose, papel, algodão
+            - Açúcar
+            - Portos típicos: Santos, Paranaguá, Rio Grande, **Itaqui**
+
+            **⛰️ MINERAL:**
+            - Minério de ferro, bauxita, manganês
+            - Cimento, clinker
+            - Portos típicos: Vitória
+
+            **🧪 FERTILIZANTE:**
+            - Ureia, KCL, NPK, fosfato
+            - Tankers químicos
+            - Portos típicos: Suape, Salvador
+
+            **Importante:** O sistema infere automaticamente o perfil baseado na carga e porto,
+            mas você pode alterá-lo manualmente se necessário.
+            """)
+
         # Botão de previsão
         st.markdown("---")
 
@@ -925,6 +976,7 @@ def main():
                         navio_data,
                         quality_score=quality_score,
                         force_model=force_model_param,
+                        force_profile=perfil_selecionado,
                     )
 
                     # Mostrar resultado
@@ -939,7 +991,8 @@ def main():
                         # Enriquecer features para visualização
                         features, perfil = predictor.enrich_features(
                             navio_data,
-                            use_complete_model=(resultado['modelo_usado'] == 'complete')
+                            use_complete_model=(resultado['modelo_usado'] == 'complete'),
+                            force_profile=perfil_selecionado
                         )
 
                         # Agrupar features por categoria
