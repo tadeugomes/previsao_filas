@@ -640,6 +640,12 @@ class EnrichedPredictor:
         acuracia = metrics.get("test_acc", 0.0) * 100  # Converter para percentual
         r2_score = metrics.get("test_r2", 0.0) * 100   # Converter para percentual
 
+        # Calcular ETA previsto (ETA original + tempo de espera)
+        eta_original = pd.to_datetime(navio_data["eta"])
+        eta_previsto = eta_original + pd.Timedelta(hours=tempo_previsto)
+        delta_horas = tempo_previsto
+        delta_dias = tempo_previsto / 24
+
         # 5. Retornar resultado
         return {
             "tempo_espera_previsto_horas": round(tempo_previsto, 1),
@@ -652,7 +658,11 @@ class EnrichedPredictor:
             "modelo_usado": modelo_usado,
             "features_calculadas": len(features),
             "porto": navio_data["porto"],
-            "eta": pd.to_datetime(navio_data["eta"]).strftime("%Y-%m-%d"),
+            "eta": eta_original.strftime("%Y-%m-%d"),
+            "eta_original": eta_original.strftime("%Y-%m-%d %H:%M"),
+            "eta_previsto": eta_previsto.strftime("%Y-%m-%d %H:%M"),
+            "delta_horas": round(delta_horas, 1),
+            "delta_dias": round(delta_dias, 1),
         }
 
 
@@ -702,7 +712,25 @@ def format_resultado(resultado: Dict, show_details: bool = True) -> str:
 
     # Informações do navio
     output.append(f"\n{Colors.bold('Porto:')} {resultado['porto']}")
-    output.append(f"{Colors.bold('ETA previsto:')} {resultado['eta']}")
+
+    # Comparação de ETAs
+    if 'eta_original' in resultado and 'eta_previsto' in resultado:
+        output.append(f"\n{Colors.bold('COMPARACAO DE DATAS:')}")
+        output.append(f"  ETA Original (chegada esperada):  {Colors.info(resultado['eta_original'])}")
+        output.append(f"  ETA Previsto (apos fila):         {Colors.highlight(resultado['eta_previsto'])}")
+
+        # Colorir delta baseado na duração
+        delta_dias = resultado.get('delta_dias', 0)
+        if delta_dias < 2:
+            delta_color = Colors.success
+        elif delta_dias < 7:
+            delta_color = Colors.info
+        elif delta_dias < 14:
+            delta_color = Colors.warning
+        else:
+            delta_color = Colors.error
+
+        output.append(f"  Diferenca (tempo na fila):        {delta_color(f'{delta_dias:.1f} dias ({resultado.get('delta_horas', 0):.1f} horas)')}")
 
     # Resultado principal
     output.append(f"\n{Colors.bold('TEMPO DE ESPERA PREVISTO:')}")

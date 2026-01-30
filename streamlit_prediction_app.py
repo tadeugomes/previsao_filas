@@ -384,6 +384,89 @@ def show_prediction_card(resultado, lineup_info=None):
         modelo_label = "Completo (51 features)" if resultado['modelo_usado'] == "complete" else "Light (15 features)"
         st.metric(f"{modelo_icon} Modelo", modelo_label)
 
+    # Comparação de datas (sempre mostrar)
+    if 'eta_original' in resultado and 'eta_previsto' in resultado:
+        st.markdown("---")
+        st.markdown("### 📅 Comparação de Datas e Horários")
+
+        # Determinar cor do delta
+        delta_dias = resultado.get('delta_dias', 0)
+        delta_horas = resultado.get('delta_horas', 0)
+
+        if delta_dias < 2:  # Menos de 2 dias
+            delta_color = "#28a745"  # Verde
+            delta_icon = "✅"
+            delta_msg = "Fila rápida"
+        elif delta_dias < 7:  # Menos de 7 dias
+            delta_color = "#ffc107"  # Amarelo
+            delta_icon = "⚠️"
+            delta_msg = "Fila moderada"
+        elif delta_dias < 14:  # Menos de 14 dias
+            delta_color = "#ff9800"  # Laranja
+            delta_icon = "🔶"
+            delta_msg = "Fila longa"
+        else:
+            delta_color = "#dc3545"  # Vermelho
+            delta_icon = "🚨"
+            delta_msg = "Fila muito longa"
+
+        # Criar colunas para comparação
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.markdown(
+                f"""
+                <div class="info-box" style="background-color: #e3f2fd; border-color: #2196f3;">
+                    <div style="font-size: 0.9rem; color: #666; margin-bottom: 0.5rem;">
+                        📍 <strong>ETA Original</strong>
+                    </div>
+                    <div style="font-size: 1.3rem; font-weight: bold; color: #2196f3;">
+                        {resultado['eta_original']}
+                    </div>
+                    <div style="font-size: 0.8rem; color: #666; margin-top: 0.3rem;">
+                        Chegada esperada no porto
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with col2:
+            st.markdown(
+                f"""
+                <div class="warning-box" style="background-color: #fff3e0; border-color: {delta_color};">
+                    <div style="font-size: 0.9rem; color: #666; margin-bottom: 0.5rem;">
+                        🔮 <strong>ETA Previsto</strong>
+                    </div>
+                    <div style="font-size: 1.3rem; font-weight: bold; color: {delta_color};">
+                        {resultado['eta_previsto']}
+                    </div>
+                    <div style="font-size: 0.8rem; color: #666; margin-top: 0.3rem;">
+                        Atracação após fila
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with col3:
+            st.markdown(
+                f"""
+                <div class="success-box" style="background-color: #f5f5f5; border-color: {delta_color};">
+                    <div style="font-size: 0.9rem; color: #666; margin-bottom: 0.5rem;">
+                        {delta_icon} <strong>Tempo na Fila</strong>
+                    </div>
+                    <div style="font-size: 1.3rem; font-weight: bold; color: {delta_color};">
+                        {format_hours_to_days(delta_horas)}
+                    </div>
+                    <div style="font-size: 0.8rem; color: #666; margin-top: 0.3rem;">
+                        {delta_msg}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
     # Comparação com lineup (se disponível)
     if lineup_info and lineup_info.get('eta_lineup'):
         st.markdown("---")
@@ -1078,17 +1161,20 @@ def main():
                     )
 
                     # Selecionar colunas para exibição
-                    display_cols = ["porto", "eta", "perfil", "tempo_espera_previsto_horas",
-                                    "categoria_fila", "acuracia_modelo", "r2_modelo", "modelo_usado"]
+                    display_cols = ["porto", "eta_original", "eta_previsto", "delta_dias", "perfil",
+                                    "tempo_espera_previsto_horas", "categoria_fila",
+                                    "acuracia_modelo", "r2_modelo", "modelo_usado"]
 
                     # Adicionar colunas de comparação se disponíveis
                     if 'imo' in df_display.columns and df_display['imo'].notna().any():
                         display_cols.insert(0, "imo")
 
+                    # Se houver comparação com lineup, adicionar essas colunas também
                     if 'eta_lineup' in df_display.columns and df_display['eta_lineup'].notna().any() and (df_display['eta_lineup'] != '').any():
-                        display_cols.insert(2, "eta_lineup")
-                        display_cols.insert(3, "eta_previsto")
-                        display_cols.insert(4, "delta_dias")
+                        # Inserir eta_lineup antes de eta_original
+                        if "eta_original" in display_cols:
+                            idx = display_cols.index("eta_original")
+                            display_cols.insert(idx, "eta_lineup")
 
                     # Filtrar apenas colunas que existem
                     display_cols = [col for col in display_cols if col in df_display.columns]
@@ -1098,9 +1184,10 @@ def main():
                         use_container_width=True,
                         column_config={
                             "imo": st.column_config.TextColumn("IMO", help="Código IMO do navio"),
-                            "eta_lineup": st.column_config.TextColumn("ETA Lineup", help="ETA do lineup original"),
-                            "eta_previsto": st.column_config.TextColumn("ETA Previsto", help="ETA previsto com espera"),
-                            "delta_dias": st.column_config.NumberColumn("Atraso (dias)", help="Diferença em dias entre ETA previsto e lineup", format="%.1f"),
+                            "eta_lineup": st.column_config.TextColumn("ETA Lineup", help="ETA do lineup original do porto"),
+                            "eta_original": st.column_config.TextColumn("ETA Original", help="Data/hora de chegada esperada no porto"),
+                            "eta_previsto": st.column_config.TextColumn("ETA Previsto", help="Data/hora de atracação após tempo na fila"),
+                            "delta_dias": st.column_config.NumberColumn("Tempo Fila (dias)", help="Tempo de espera na fila em dias", format="%.1f"),
                             "acuracia_modelo": st.column_config.TextColumn("Acurácia", help="Acurácia do modelo em testes (classificação de categorias)"),
                             "r2_modelo": st.column_config.TextColumn("R²", help="R² do modelo em testes (qualidade da regressão)"),
                         }
