@@ -1215,8 +1215,6 @@ def main():
         """
         <div style="text-align: center; color: #666; font-size: 0.9rem;">
         🚢 Sistema de Previsão de Fila Portuária |
-        Modelos treinados com dados AIS reais (308 eventos) |
-        Sem necessidade de API real-time (economia de €500+/mês)
         </div>
         """,
         unsafe_allow_html=True,
