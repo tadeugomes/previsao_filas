@@ -14,6 +14,7 @@ Não requer API AIS em tempo real - usa apenas:
 """
 
 import json
+import os
 import pickle
 import warnings
 from datetime import datetime, timedelta
@@ -24,6 +25,13 @@ import numpy as np
 import pandas as pd
 import requests
 from sklearn.preprocessing import LabelEncoder
+
+# Tentar importar AIS provider (opcional)
+try:
+    from ais_provider import AISProvider, AISProviderFactory, PortTraffic
+    AIS_AVAILABLE = True
+except ImportError:
+    AIS_AVAILABLE = False
 
 warnings.filterwarnings("ignore")
 
@@ -135,15 +143,44 @@ class EnrichedPredictor:
     - Features AIS estimadas (médias)
     """
 
-    def __init__(self):
-        """Inicializa o preditor carregando modelos e dados históricos."""
+    def __init__(self, use_datalastic: bool = False):
+        """
+        Inicializa o preditor carregando modelos e dados históricos.
+
+        Args:
+            use_datalastic: Se True, usa Datalastic API para features AIS em tempo real
+        """
         self.models = self._load_models()
         self.lineup_history = self._load_lineup_history()
         self.porto_stats = self._calculate_porto_stats()
 
+        # Configurar Datalastic provider (opcional)
+        self.ais_provider = None
+        if use_datalastic and AIS_AVAILABLE:
+            api_key = os.getenv('DATALASTIC_API_KEY')
+
+            if not api_key:
+                print(Colors.warning(
+                    "[AVISO] DATALASTIC_API_KEY não configurada. "
+                    "Configure com: export DATALASTIC_API_KEY='sua_key'"
+                ))
+            else:
+                try:
+                    self.ais_provider = AISProviderFactory.create(
+                        'datalastic',
+                        api_key=api_key
+                    )
+                    print(Colors.success("[OK] Datalastic AIS Provider ativo"))
+                    print(Colors.info("    Plano recomendado: Starter (€199/mês, 20K créditos)"))
+                except Exception as e:
+                    print(Colors.warning(f"[AVISO] Erro ao inicializar Datalastic: {e}"))
+                    self.ais_provider = None
+
         print(Colors.success("[OK] EnrichedPredictor inicializado com sucesso"))
         print(Colors.info(f"   Modelos carregados: {list(self.models.keys())}"))
         print(Colors.info(f"   Historico de lineups: {len(self.lineup_history)} registros"))
+        if self.ais_provider:
+            print(Colors.success("   AIS Real-Time: ATIVO (Datalastic)"))
 
     def _load_models(self) -> Dict:
         """Carrega modelos completos e light para cada perfil."""
@@ -338,6 +375,79 @@ class EnrichedPredictor:
             print(Colors.warning(f"[AVISO] Erro ao estimar fila historica: {e}"))
             return 3  # Fallback
 
+    def _get_ais_features(
+        self,
+        porto: str,
+        imo: Optional[str] = None
+    ) -> Dict[str, float]:
+        """
+        Obtém features AIS real-time da Datalastic ou usa fallback histórico.
+
+        Args:
+            porto: Nome do porto
+            imo: Código IMO do navio (opcional)
+
+        Returns:
+            Dict com features AIS
+        """
+        # Coordenadas do porto (já disponíveis em PORTOS)
+        porto_coords = PORTOS.get(porto)
+
+        if not porto_coords:
+            print(Colors.warning(f"[AVISO] Porto {porto} sem coordenadas. Usando fallback."))
+            return self._get_ais_fallback(porto)
+
+        # Tentar usar dados AIS reais da Datalastic
+        if self.ais_provider:
+            try:
+                # Obter tráfego na área do porto
+                traffic = self.ais_provider.get_port_traffic(
+                    lat=porto_coords['lat'],
+                    lon=porto_coords['lon'],
+                    radius_km=50  # 50km do porto
+                )
+
+                print(Colors.success(
+                    f"[DATALASTIC] Porto {porto}: {traffic.vessels_in_radius} navios "
+                    f"({traffic.vessels_anchored} ancorados)"
+                ))
+
+                # Calcular ETA média baseado em distância e velocidade
+                eta_media_horas = 0.0
+                if traffic.avg_speed_knots > 0:
+                    # Converter milhas náuticas para horas de viagem
+                    eta_media_horas = (traffic.avg_distance_km / 1.852) / traffic.avg_speed_knots
+
+                return {
+                    'ais_navios_no_raio': float(traffic.vessels_in_radius),
+                    'ais_fila_ao_largo': float(traffic.vessels_anchored),
+                    'ais_velocidade_media_kn': traffic.avg_speed_knots,
+                    'ais_dist_media_km': traffic.avg_distance_km,
+                    'ais_eta_media_horas': eta_media_horas,
+                }
+
+            except Exception as e:
+                print(Colors.warning(f"[AVISO] Erro ao obter dados Datalastic: {e}. Usando fallback."))
+
+        # Fallback: usar valores estimados baseados em histórico
+        return self._get_ais_fallback(porto)
+
+    def _get_ais_fallback(self, porto: str) -> Dict[str, float]:
+        """
+        Fallback: estima features AIS baseado em histórico.
+
+        Este é o comportamento atual do sistema (antes da integração Datalastic).
+        """
+        fila_historica = self.estimate_fila_historica(porto, datetime.now())
+
+        return {
+            'ais_navios_no_raio': float(fila_historica),
+            'ais_fila_ao_largo': float(fila_historica),
+            'ais_velocidade_media_kn': 10.0,  # Valor fixo conservador
+            'ais_dist_media_km': 100.0,       # Valor fixo conservador
+            'ais_eta_media_horas': 10.0,      # Valor fixo conservador
+        }
+
     def inferir_perfil(self, tipo_navio: str, natureza_carga: str, porto: str) -> str:
         """
         Infere o perfil de carga baseado no tipo de navio, carga e porto.
@@ -490,12 +600,10 @@ class EnrichedPredictor:
         features["indice_pressao_soja"] = (agro["preco_soja"] * agro["prod_soja"]) / 100
         features["indice_pressao_milho"] = (agro["preco_milho"] * agro["prod_milho"]) / 100
 
-        # ===== FEATURES AIS (ESTIMADAS) =====
-        features["ais_navios_no_raio"] = features["navios_na_fila_7d"]
-        features["ais_fila_ao_largo"] = features["navios_na_fila_7d"]
-        features["ais_velocidade_media_kn"] = 10.0
-        features["ais_dist_media_km"] = 100.0
-        features["ais_eta_media_horas"] = 10.0
+        # ===== FEATURES AIS (DATALASTIC REAL-TIME OU ESTIMADAS) =====
+        imo = navio_data.get('imo')  # Aceitar IMO como input opcional
+        ais_features = self._get_ais_features(porto, imo)
+        features.update(ais_features)
 
         # ===== FEATURES ESPECÍFICAS POR PERFIL =====
         features["flag_quimico"] = 1 if perfil == "FERTILIZANTE" else 0
@@ -739,7 +847,8 @@ def format_resultado(resultado: Dict, show_details: bool = True) -> str:
         else:
             delta_color = Colors.error
 
-        output.append(f"  Diferenca (tempo na fila):        {delta_color(f'{delta_dias:.1f} dias ({resultado.get('delta_horas', 0):.1f} horas)')}")
+        delta_horas_val = resultado.get('delta_horas', 0)
+        output.append(f"  Diferenca (tempo na fila):        {delta_color(f'{delta_dias:.1f} dias ({delta_horas_val:.1f} horas)')}")
 
     # Resultado principal
     output.append(f"\n{Colors.bold('TEMPO DE ESPERA PREVISTO:')}")

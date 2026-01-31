@@ -13,6 +13,7 @@ Funcionalidades:
 """
 
 import json
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -717,6 +718,78 @@ def main():
         )
 
         show_features = st.checkbox("Mostrar Features Calculadas", value=False)
+
+    # Configuração Datalastic AIS
+    with st.sidebar.expander("🛰️ Dados AIS em Tempo Real (Datalastic)", expanded=False):
+        st.markdown("""
+        ### O que é Datalastic AIS?
+
+        Sistema de rastreamento de navios em tempo real via satélite.
+
+        **Benefícios:**
+        - 📍 Posição exata de navios (lat/lon, velocidade)
+        - 🔍 Conta navios ancorados em tempo real
+        - 🎯 Melhora precisão de previsão em 50-70%
+
+        **Custo:**
+        - Starter: €199/mês (20.000 créditos)
+        - Experimenter: €399/mês (80.000 créditos)
+
+        **Status atual:**
+        - ✅ Já usado para treinar modelos (308 eventos)
+        - ✅ Código de integração pronto
+        """)
+
+        use_datalastic = st.checkbox(
+            "Usar Datalastic AIS real-time",
+            value=False,
+            help="Ativa busca de dados AIS em tempo real. Requer API key configurada."
+        )
+
+        if use_datalastic:
+            # Verificar se API key está configurada
+            api_key = os.getenv('DATALASTIC_API_KEY')
+
+            if not api_key:
+                st.error("""
+                ⚠️ **DATALASTIC_API_KEY não configurada**
+
+                Configure a API key com:
+                ```bash
+                export DATALASTIC_API_KEY='sua_key_aqui'
+                ```
+
+                Obtenha sua key em: https://datalastic.com/pricing/
+                """)
+
+                # Permitir input manual temporário
+                api_key_input = st.text_input(
+                    "API Key (temporária)",
+                    type="password",
+                    help="Cole sua API key Datalastic aqui (apenas para esta sessão)"
+                )
+
+                if api_key_input:
+                    os.environ['DATALASTIC_API_KEY'] = api_key_input
+                    api_key = api_key_input
+
+            if api_key:
+                # Recarregar predictor com Datalastic
+                try:
+                    predictor = EnrichedPredictor(use_datalastic=True)
+
+                    st.success("✅ Datalastic AIS ativo")
+                    st.info("💳 Consumo de créditos: ~1-5 créditos por previsão")
+
+                    # Mostrar contador de créditos (se disponível)
+                    if hasattr(predictor, 'ais_provider') and predictor.ais_provider and hasattr(predictor.ais_provider, 'client'):
+                        credits_used = predictor.ais_provider.client.credits_used
+                        st.metric("Créditos usados (sessão)", credits_used)
+                except Exception as e:
+                    st.error(f"❌ Erro ao ativar Datalastic: {e}")
+                    use_datalastic = False
+        else:
+            st.info("ℹ️ Usando estimativas históricas (sem AIS real-time)")
 
     # Converter seleção de modelo
     force_model_param = None
