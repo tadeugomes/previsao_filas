@@ -96,6 +96,7 @@ PORTOS = {
     "Paranaguá": {"uf": "PR", "regiao": "SUL", "capacidade": 60, "num_bercos": 12, "lat": -25.51, "lon": -48.51},
     "Rio Grande": {"uf": "RS", "regiao": "SUL", "capacidade": 50, "num_bercos": 10, "lat": -32.09, "lon": -52.10},
     "Itaqui": {"uf": "MA", "regiao": "NORDESTE", "capacidade": 70, "num_bercos": 8, "lat": -2.57, "lon": -44.37},
+    "Ponta da Madeira": {"uf": "MA", "regiao": "NORDESTE", "capacidade": 90, "num_bercos": 4, "lat": -2.53, "lon": -44.36},
     "Vitória": {"uf": "ES", "regiao": "SUDESTE", "capacidade": 80, "num_bercos": 15, "lat": -20.32, "lon": -40.34},
     "Suape": {"uf": "PE", "regiao": "NORDESTE", "capacidade": 55, "num_bercos": 9, "lat": -8.37, "lon": -34.95},
     "Salvador": {"uf": "BA", "regiao": "NORDESTE", "capacidade": 45, "num_bercos": 8, "lat": -12.97, "lon": -38.52},
@@ -485,7 +486,7 @@ class EnrichedPredictor:
             if porto in ["Santos", "Paranaguá", "Rio Grande", "Itaqui"]:
                 return "VEGETAL"
             # Portos de minério
-            elif porto in ["Vitória"]:
+            elif porto in ["Vitória", "Ponta da Madeira"]:
                 return "MINERAL"
             else:
                 return "VEGETAL"  # Default

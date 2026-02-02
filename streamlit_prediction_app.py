@@ -668,7 +668,7 @@ def main():
 
             ### 📍 Portos Cobertos:
 
-            **{len(PORTOS)} portos brasileiros**: Santos, Paranaguá, Rio Grande, Itaqui, Vitória, Suape, Salvador, Itajaí
+            **{len(PORTOS)} portos brasileiros**: Santos, Paranaguá, Rio Grande, Itaqui, Ponta da Madeira, Vitória, Suape, Salvador, Itajaí
 
             ---
 
